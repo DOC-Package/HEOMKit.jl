@@ -48,12 +48,12 @@ using Test
         
         println("\nHEOM System:")
         println("  nado = $(system.nado)")
-        println("  NL = $(system.NL)")
-        println("  NL² = $(system.NL2)")
+        println("  ndim = $(system.ndim)")
+        println("  ndim² = $(system.ndim2)")
         
         @test system.nado == binomial(ndepth + noise.nterms, noise.nterms)
-        @test system.NL == 2
-        @test system.NL2 == 4
+        @test system.ndim == 2
+        @test system.ndim2 == 4
         
         # 初期条件: |1⟩⟨1| (状態1に局在)
         P0 = initial_ado(system, 1)
@@ -62,7 +62,7 @@ using Test
         println("  size = $(size(P0))")
         println("  P0[:, 1] = $(P0[:, 1])")  # ρ₀
         
-        @test size(P0) == (system.NL2, system.nado)
+        @test size(P0) == (system.ndim2, system.nado)
         @test P0[1, 1] ≈ 1.0  # ρ₁₁ = 1
         @test P0[4, 1] ≈ 0.0  # ρ₂₂ = 0
         

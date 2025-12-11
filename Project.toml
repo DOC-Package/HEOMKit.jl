@@ -4,19 +4,12 @@ authors = ["Hideaki Takahashi"]
 version = "1.0.0-DEV"
 
 [deps]
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-ExpFit = "3e354d20-bd3f-44fe-967b-b5188f355960"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
-QFiND = "af16a7c1-792b-4481-9b88-c9c438329a9c"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
-UnicodePlots = "b8865327-cd53-5732-bb35-84acbb429228"
 
 [compat]
-CairoMakie = "0.15.8"
 LinearAlgebra = "1.11.0"
-QFiND = "1.0.0"
 SparseArrays = "1.11.0"
-UnicodePlots = "3.8.1"
 julia = "1.11"
 
 [extras]

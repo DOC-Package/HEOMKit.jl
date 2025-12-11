@@ -1,15 +1,3 @@
-#=
-Ohmic Bath Example with ESPRIT Fitting
-
-This example demonstrates how to:
-1. Define an Ohmic spectral density using QFiND
-2. Fit the bath correlation function with ExpFit's ESPRIT algorithm
-3. Run HEOM dynamics with the fitted bath parameters
-
-Ohmic spectral density: J(ω) = π α γ^(-s) ω^s exp(-ω/γ)
-where s = 1 for Ohmic case.
-=#
-
 using KaisouEOM
 using KaisouEOM: icm2ifs, kB
 using QFiND
@@ -17,32 +5,15 @@ using ExpFit
 using LinearAlgebra
 using CairoMakie
 
-# =============================================
-# 1. Define Ohmic Spectral Density
-# =============================================
-
 # Spectral density parameters
 s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γ = 100.0      # Cutoff frequency [cm⁻¹]
 λ = 50.0       # Reorganization energy [cm⁻¹]
 T = 300.0      # Temperature [K]
-
 sd = PowerLawExpSD(s, γ; reorgene=λ)
 bcf = BosonicBCF(sd, T)
 
-println("=" ^ 60)
-println("Ohmic Bath Example")
-println("=" ^ 60)
-println("\nSpectral Density Parameters:")
-println("  Type: Ohmic (s = $s)")
-println("  Cutoff frequency γ = $γ cm⁻¹")
-println("  Reorganization energy λ = $λ cm⁻¹")
-println("  Temperature T = $T K")
-
-# =============================================
-# 2. ESPRIT Fitting of Bath Correlation Function
-# =============================================
-
+# ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
 tmax = 500.0   # [fs]
@@ -52,39 +23,26 @@ eps = 1e-2     # ESPRIT tolerance
 dt = (tmax - tmin) / (nsamples - 1)
 t_samples = range(tmin, tmax, length=nsamples)
 bcf_samples = [bcf(t) for t in t_samples]
-
-println("\nBath Correlation Function Sampling:")
-println("  Time range: [$tmin, $tmax] fs")
-println("  Number of samples: $nsamples")
-println("  C(0) = $(bcf_samples[1])")
-
 # ESPRIT fitting
 ef = ExpFit.esprit(bcf_samples, dt, eps)
-
 println("\nESPRIT Fitting Result:")
 println("  Number of exponential terms: $(length(ef.expon))")
-
 # Check fitting accuracy
 bcf_fit = [ef(t) for t in t_samples]
 fit_error = norm(bcf_fit .- bcf_samples) / norm(bcf_samples)
 println("  Relative fitting error: $(fit_error)")
-
 # Display fitted parameters
 println("\nFitted Bath Parameters (γₖ, cₖ):")
 for i in 1:length(ef.expon)
     println("  k=$i: γ = $(ef.expon[i]), c = $(ef.coeff[i])")
 end
 
-# =============================================
-# 3. Build HEOM System
-# =============================================
-
+# Build HEOM System
 # Bath construction from ESPRIT results
 expon = ef.expon
 coeff = ef.coeff
-
 V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = Bath(expon, coeff, V; add_conjugate=false)
+bath = Bath(expon, coeff, V; add_conjugate=true)
 noise = Noise(bath)
 
 # System Hamiltonian (two-level system)
@@ -99,15 +57,9 @@ println("  Tunneling coupling Δ = $Δ cm⁻¹")
 # HEOM system
 ndepth = 3
 system = HEOMSystem(H, noise, ndepth; hierarchy=:depth)
-
 println("\nHEOM System:")
 println("  Hierarchy depth: $ndepth")
 println("  Number of ADOs: $(system.nado)")
-println("  System dimension: $(system.NL)")
-
-# =============================================
-# 4. Time Evolution
-# =============================================
 
 # Initial condition: localized on state |1⟩
 P0 = initial_ado(system, 1)

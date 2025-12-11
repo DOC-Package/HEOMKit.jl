@@ -1,13 +1,13 @@
 """
     Matrix module for HEOM
 
-Liouville 空間における演算子を定義する。
+Define operators in Liouville space.
 """
 
 using SparseArrays
 
 # =====================================
-# パウリ行列
+# Pauli matrices
 # =====================================
 
 const σx = ComplexF64[0 1; 1 0]
@@ -19,83 +19,45 @@ const σm = ComplexF64[0 0; 1 0]   # σ⁻ (lowering operator)
 
 
 # =====================================
-# Liouville 空間の演算子（疎行列版）
+# Liouville space operators (sparse matrix version)
 # =====================================
 
-# 疎行列の型エイリアス
+# Type alias for sparse matrices
 const SparseMat = SparseMatrixCSC{ComplexF64, Int}
 
-"""
-    kron_id_left(A::AbstractMatrix)
-
-A ⊗ I を疎行列として計算する（左からの作用）。
-"""
+"""    kron_id_left(A) → A ⊗ I (sparse)"""
 function kron_id_left(A::AbstractMatrix)
     n = size(A, 1)
     return kron(sparse(ComplexF64.(A)), sparse(one(ComplexF64) * I, n, n))
 end
 
-"""
-    kron_id_right(A::AbstractMatrix)
-
-I ⊗ A を疎行列として計算する（右からの作用）。
-"""
+"""    kron_id_right(A) → I ⊗ A (sparse)"""
 function kron_id_right(A::AbstractMatrix)
     n = size(A, 1)
     return kron(sparse(one(ComplexF64) * I, n, n), sparse(ComplexF64.(A)))
 end
 
-"""
-    matx(A::AbstractMatrix)
-
-交換子の Liouville 表現: [A, ρ] → (A ⊗ I - I ⊗ Aᵀ) vec(ρ)
-疎行列を返す。
-"""
+"""    matx(A) → [A, ρ] in Liouville space"""
 matx(A::AbstractMatrix)::SparseMat = kron_id_left(A) - kron_id_right(transpose(A))
 
-"""
-    mato(A::AbstractMatrix)
-
-反交換子の Liouville 表現: {A, ρ} → (A ⊗ I + I ⊗ Aᵀ) vec(ρ)
-疎行列を返す。
-"""
+"""    mato(A) → {A, ρ} in Liouville space"""
 mato(A::AbstractMatrix)::SparseMat = kron_id_left(A) + kron_id_right(transpose(A))
 
-"""
-    matl(A::AbstractMatrix)
-
-左からの作用: Aρ → (A ⊗ I) vec(ρ)
-疎行列を返す。
-"""
+"""    matl(A) → Aρ in Liouville space"""
 matl(A::AbstractMatrix)::SparseMat = kron_id_left(A)
 
-"""
-    matr(A::AbstractMatrix)
-
-右からの作用: ρA† → (I ⊗ conj(A)) vec(ρ)
-疎行列を返す。
-"""
+"""    matr(A) → ρA† in Liouville space"""
 matr(A::AbstractMatrix)::SparseMat = kron_id_right(conj(A))
 
 
 # =====================================
-# HEOM 行列の構造体
+# HEOM matrices structure
 # =====================================
 
 """
     HEOMMatrices
 
-HEOM 計算に必要な Liouville 空間の行列を保持する構造体。
-全ての行列は疎行列（SparseMatrixCSC）として保持される。
-
-# Fields
-- `Ls::SparseMat`: システムの Liouvillian -i[H, ·]
-- `Vx::Vector{SparseMat}`: 各熱浴の交換子演算子 [V, ·]
-- `Vo::Vector{SparseMat}`: 各熱浴の反交換子演算子 {V, ·}
-- `Vl::Vector{SparseMat}`: 各熱浴の左作用演算子 V·
-- `Vr::Vector{SparseMat}`: 各熱浴の右作用演算子 ·V†
-- `NL::Int`: システムのヒルベルト空間次元
-- `NL2::Int`: Liouville 空間次元 (NL²)
+Liouville space matrices for HEOM: `Ls`, `Vx`, `Vo`, `Vl`, `Vr`, `ndim`, `ndim2`.
 """
 struct HEOMMatrices
     Ls::SparseMat
@@ -103,29 +65,17 @@ struct HEOMMatrices
     Vo::Vector{SparseMat}
     Vl::Vector{SparseMat}
     Vr::Vector{SparseMat}
-    NL::Int
-    NL2::Int
+    ndim::Int
+    ndim2::Int
 end
 
-"""
-    HEOMMatrices(H::AbstractMatrix, noise::Noise)
+"""    HEOMMatrices(H, noise)
 
-ハミルトニアン H と Noise から HEOM 行列を構築する。
-
-# Arguments
-- `H`: システムハミルトニアン
-- `noise`: Noise オブジェクト（熱浴情報を含む）
-
-# Example
-```julia
-H = [0 1; 1 0]  # 2準位系
-noise = Noise([bath1, bath2])
-matrices = HEOMMatrices(H, noise)
-```
+Construct HEOM matrices from Hamiltonian and Noise.
 """
 function HEOMMatrices(H::AbstractMatrix, noise::Noise)
-    NL = size(H, 1)
-    NL2 = NL^2
+    ndim = size(H, 1)
+    ndim2 = ndim^2
     
     # システム Liouvillian（疎行列）
     Ls = -1.0im * matx(ComplexF64.(H))
@@ -145,7 +95,7 @@ function HEOMMatrices(H::AbstractMatrix, noise::Noise)
         Vr[ibath] = matr(V)
     end
     
-    return HEOMMatrices(Ls, Vx, Vo, Vl, Vr, NL, NL2)
+    return HEOMMatrices(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
 end
 
 
@@ -154,13 +104,13 @@ end
 # =====================================
 
 function Base.show(io::IO, m::HEOMMatrices)
-    print(io, "HEOMMatrices(NL=$(m.NL), nbath=$(length(m.Vx)))")
+    print(io, "HEOMMatrices(ndim=$(m.ndim), nbath=$(length(m.Vx)))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::HEOMMatrices)
     println(io, "HEOMMatrices:")
-    println(io, "  System dimension NL = $(m.NL)")
-    println(io, "  Liouville dimension NL² = $(m.NL2)")
+    println(io, "  System dimension ndim = $(m.ndim)")
+    println(io, "  Liouville dimension ndim² = $(m.ndim2)")
     println(io, "  Number of baths = $(length(m.Vx))")
 end
 

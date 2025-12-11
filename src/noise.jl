@@ -5,13 +5,9 @@
 """
     Bath
 
-単一熱浴を表す構造体。熱浴の相関関数をノイズパラメータで展開した係数を保持する。
+Single bath with exponential expansion of correlation function C(t) = Σₖ cₖ exp(-γₖt).
 
-# Fields
-- `expon::Vector{ComplexF64}`: 指数緩和率 γₖ
-- `coeff::Vector{ComplexF64}`: 展開係数 cₖ
-- `nterms::Int`: ノイズモード数（expon, coeff の長さ）
-- `V::Matrix{ComplexF64}`: 系と熱浴の相互作用演算子
+Fields: `expon` (γₖ), `coeff` (cₖ), `nterms`, `V` (coupling operator)
 """
 struct Bath
     expon::Vector{ComplexF64}
@@ -23,11 +19,9 @@ end
 # Note: Bath(sd::SpectralDensity, ...) constructor is available when QFiND is loaded
 # See the package extension or use the direct constructor with gamk/ck vectors.
 
-"""
-    Bath(expon::Vector, coeff::Vector, V::AbstractMatrix; add_conjugate=true)
+"""    Bath(expon, coeff, V; add_conjugate=true)
 
-ノイズパラメータを直接指定して Bath を構築する。
-複素共役ペアは自動的に追加される。
+Construct Bath from exponential parameters. Conjugate pairs added by default.
 """
 function Bath(expon::Vector, coeff::Vector, V::AbstractMatrix;
               add_conjugate::Bool=true)
@@ -44,24 +38,15 @@ end
 
 
 # =====================================
-# Noise 構造体（複数熱浴を統合）
+# Noise structure (unified multiple baths)
 # =====================================
 
 """
     Noise
 
-複数の熱浴を統合したノイズパラメータを保持する構造体。
+Unified noise parameters from multiple baths.
 
-# Fields
-- `expon::Vector{ComplexF64}`: 全熱浴の統合 γₖ 配列
-- `coeff::Vector{ComplexF64}`: 全熱浴の統合 cₖ 配列
-- `abs_coeff::Vector{Float64}`: |cₖ| の配列
-- `nterms::Int`: 全ノイズモード数
-- `nbath::Int`: 熱浴数
-- `nterms_bath::Vector{Int}`: 各熱浴のノイズモード数
-- `jstart_bath::Vector{Int}`: 各熱浴の開始インデックス（1-based）
-- `V::Vector{Matrix{ComplexF64}}`: 各熱浴の相互作用演算子
-- `baths::Vector{Bath}`: 元の Bath オブジェクト
+Fields: `expon`, `coeff`, `abs_coeff`, `nterms`, `nbath`, `nterms_bath`, `jstart_bath`, `V`, `baths`
 """
 struct Noise
     expon::Vector{ComplexF64}
@@ -75,17 +60,9 @@ struct Noise
     baths::Vector{Bath}
 end
 
-"""
-    Noise(baths::Vector{Bath})
+"""    Noise(baths::Vector{Bath})
 
-複数の Bath から Noise を構築する。
-
-# Example
-```julia
-bath1 = Bath(sd1, 300.0, V1; degree=10)
-bath2 = Bath(sd2, 300.0, V2; degree=10)
-noise = Noise([bath1, bath2])
-```
+Construct Noise from multiple Bath objects.
 """
 function Noise(baths::Vector{Bath})
     nbath = length(baths)
@@ -115,10 +92,9 @@ function Noise(baths::Vector{Bath})
     return Noise(expon, coeff, abs_coeff, nterms, nbath, nterms_bath, jstart_bath, V, baths)
 end
 
-"""
-    Noise(bath::Bath)
+"""    Noise(bath::Bath)
 
-単一の Bath から Noise を構築する。
+Construct Noise from a single Bath.
 """
 function Noise(bath::Bath)
     return Noise([bath])
@@ -126,23 +102,12 @@ end
 
 
 # =====================================
-# 便利なコンストラクタ
+# Convenience constructors
 # =====================================
 
-"""
-    drude_bath(λ::Real, γ::Real, temperature::Real, V::AbstractMatrix; 
-               degree::Int=10, integrator::Symbol=:pade)
+"""    drude_bath(λ, γ, T, V; degree=10)
 
-Drude-Lorentz スペクトル密度を持つ熱浴を作成する。
-
-J(ω) = 2λγω / (ω² + γ²)
-
-# Arguments
-- `λ`: 再構成エネルギー
-- `γ`: カットオフ周波数
-- `temperature`: 温度 [K]
-- `V`: 相互作用演算子
-- `degree`: 展開次数
+Create bath with Drude-Lorentz spectral density J(ω) = 2λγω/(ω² + γ²).
 """
 function drude_bath(λ::Real, γ::Real, temperature::Real, V::AbstractMatrix;
                     degree::Int=10, integrator::Symbol=:pade)
@@ -150,20 +115,9 @@ function drude_bath(λ::Real, γ::Real, temperature::Real, V::AbstractMatrix;
     return Bath(sd, temperature, V; degree=degree, integrator=integrator)
 end
 
-"""
-    brownian_bath(λ::Real, γ::Real, Ω::Real, temperature::Real, V::AbstractMatrix;
-                  degree::Int=10, integrator::Symbol=:pade)
+"""    brownian_bath(λ, γ, Ω, T, V; degree=10)
 
-Brownian (underdamped) スペクトル密度を持つ熱浴を作成する。
-
-J(ω) = 4λγΩ²ω / ((ω² - Ω²)² + 4γ²ω²)
-
-# Arguments
-- `λ`: 結合強度
-- `γ`: 減衰率
-- `Ω`: 振動子周波数
-- `temperature`: 温度 [K]
-- `V`: 相互作用演算子
+Create bath with Brownian spectral density J(ω) = 4λγΩ²ω/((ω² - Ω²)² + 4γ²ω²).
 """
 function brownian_bath(λ::Real, γ::Real, Ω::Real, temperature::Real, V::AbstractMatrix;
                        degree::Int=10, integrator::Symbol=:pade)
@@ -173,18 +127,12 @@ end
 
 
 # =====================================
-# 派生パラメータの計算（HEOM用）
+# Derived parameter computation (for HEOM)
 # =====================================
 
-"""
-    compute_heom_params(noise::Noise)
+"""    compute_heom_params(noise) → (bk, ak, cb)
 
-HEOM 計算に必要な派生パラメータを計算する。
-
-# Returns
-- `bk`: real(γₖ) + |imag(γₖ)|
-- `ak`: 指数（デフォルト 0.5）
-- `cb`: |cₖ| / bₖ
+Compute derived HEOM parameters.
 """
 function compute_heom_params(noise::Noise)
     nterms = noise.nterms

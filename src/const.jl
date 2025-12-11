@@ -1,61 +1,39 @@
-"""
-    Physical constants for HEOM calculations
+"""Physical constants for HEOM calculations
 
-物理定数と単位変換係数を定義する。
+Define physical constants and unit conversion factors.
 """
 
 # =====================================
-# 基本物理定数
+# Fundamental physical constants
 # =====================================
 
-"""ボルツマン定数 [cm⁻¹/K] (CODATA 2018)"""
+"""Boltzmann constant (cm⁻¹/K), CODATA 2018"""
 const kB = 0.695034800
 
-"""換算プランク定数 [J·s]"""
+"""Reduced Planck constant (J·s)"""
 const hbar_SI = 1.054571817e-34
 
-"""光速 [cm/s]"""
+"""Speed of light (cm/s)"""
 const c_light = 2.99792458e10
 
 
 # =====================================
-# 単位変換係数
+# Unit conversion factors
 # =====================================
 
-"""
-逆センチメートルからフェムト秒逆数への変換係数
+"""Conversion factor: cm⁻¹ → fs⁻¹ (≈ 1.884×10⁻⁴)"""
+const icm2ifs = 2π * c_light * 1e-15
 
-1 cm⁻¹ = 2πc [1/s] = 2π × 2.998×10¹⁰ × 10⁻¹⁵ [1/fs]
-       ≈ 1.883651×10⁻⁴ [1/fs]
-
-使用例:
-    ω_fs = ω_cm * icm2ifs  # cm⁻¹ → 1/fs
-"""
-const icm2ifs = 2π * c_light * 1e-15  # ≈ 1.883651e-4
-
-"""
-フェムト秒逆数から逆センチメートルへの変換係数
-
-使用例:
-    ω_cm = ω_fs * ifs2icm  # 1/fs → cm⁻¹
-"""
+"""Conversion factor: fs⁻¹ → cm⁻¹"""
 const ifs2icm = 1.0 / icm2ifs
 
 
 # =====================================
-# 便利な関数
+# Utility functions
 # =====================================
 
-"""
-    thermal_energy(T::Real)
-
-温度 T [K] における熱エネルギー kT を cm⁻¹ で返す。
-"""
+"""    thermal_energy(T) → kT in cm⁻¹"""
 thermal_energy(T::Real) = kB * T
 
-"""
-    inverse_temperature(T::Real)
-
-温度 T [K] における逆温度 β = 1/kT を cm で返す。
-"""
+"""    inverse_temperature(T) → β = 1/kT in cm"""
 inverse_temperature(T::Real) = 1.0 / (kB * T)
