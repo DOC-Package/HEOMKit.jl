@@ -7,8 +7,8 @@ using CairoMakie
 
 # Spectral density parameters
 s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
-γ = 100.0      # Cutoff frequency [cm⁻¹]
-λ = 50.0       # Reorganization energy [cm⁻¹]
+γ = 50.0      # Cutoff frequency [cm⁻¹]
+λ = 10.0       # Reorganization energy [cm⁻¹]
 T = 300.0      # Temperature [K]
 sd = PowerLawExpSD(s, γ; reorgene=λ)
 bcf = BosonicBCF(sd, T)
@@ -16,9 +16,9 @@ bcf = BosonicBCF(sd, T)
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 500.0   # [fs]
+tmax = 200.0   # [fs]
 nsamples = 200
-eps = 1e-2     # ESPRIT tolerance
+eps = 1e-3     # ESPRIT tolerance
 
 dt = (tmax - tmin) / (nsamples - 1)
 t_samples = range(tmin, tmax, length=nsamples)
@@ -55,7 +55,7 @@ println("  Energy difference ε = $ε cm⁻¹")
 println("  Tunneling coupling Δ = $Δ cm⁻¹")
 
 # HEOM system
-ndepth = 3
+ndepth = 6
 system = HEOMSystem(H, noise, ndepth; hierarchy=:depth)
 println("\nHEOM System:")
 println("  Hierarchy depth: $ndepth")
@@ -65,8 +65,8 @@ println("  Number of ADOs: $(system.nado)")
 P0 = initial_ado(system, 1)
 
 # Time evolution parameters
-t_end = 500.0    # [fs]
-dt_evolve = 1.0  # [fs]
+t_end = 200.0    # [fs]
+dt_evolve = 0.5  # [fs]
 
 println("\nTime Evolution:")
 println("  Initial state: |1⟩⟨1|")

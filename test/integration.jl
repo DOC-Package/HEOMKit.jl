@@ -1,5 +1,5 @@
 using KaisouEOM
-using KaisouEOM: icm2ifs, kB  # 定数をインポート
+using KaisouEOM: icm2ifs, kB, build_tridiagonal_D  # 定数をインポート
 using QFiND
 using ExpFit
 using LinearAlgebra
@@ -265,6 +265,147 @@ using Test
             total_pop = pops[1, i] + pops[2, i]
             @test total_pop ≈ 1.0 atol=1e-5
         end
+        
+        println("\n=== Test passed! ===")
+    end
+    
+end
+
+
+@testset "HSEOM Integration Test" begin
+    
+    @testset "HSEOM bra/ket simultaneous evolution" begin
+        println("\n=== HSEOM bra/ket simultaneous evolution ===")
+        
+        # ハミルトニアン (2準位系)
+        Δ = 100.0  # トンネル結合 [cm⁻¹]
+        H = ComplexF64[0 Δ; Δ 0] * icm2ifs  # [1/fs]
+        
+        # 相互作用演算子 (σz)
+        V = ComplexF64[1 0; 0 -1]
+        
+        # ノイズパラメータ
+        expon = ComplexF64[0.01 + 0.001im]  # [1/fs]
+        coeff = ComplexF64[0.001 + 0.0001im]  # 係数
+        bath = Bath(expon, coeff, V; add_conjugate=true)
+        noise = Noise(bath)
+        
+        println("Noise parameters:")
+        println("  nterms = $(noise.nterms)")
+        
+        # D 行列（三重対角）
+        gamma_c = 0.05
+        D = build_tridiagonal_D(noise.nterms, gamma_c)
+        
+        # HSEOM システム構築
+        ndepth = 3
+        system = HSEOMSystem(H, noise, D, ndepth)
+        
+        println("\nHSEOM System:")
+        println("  nadw = $(system.nadw)")
+        println("  ndim = $(system.ndim)")
+        println("  nterms = $(system.nterms)")
+        
+        @test system.nadw == binomial(ndepth + noise.nterms, noise.nterms)
+        @test system.ndim == 2
+        
+        # 初期条件: |1⟩ (bra と ket 両方)
+        Pb0 = initial_adw(system, 1)
+        Pk0 = initial_adw(system, 1)
+        
+        println("\nInitial ADW:")
+        println("  size = $(size(Pk0))")
+        println("  Pk0[:, 1] = $(Pk0[:, 1])")
+        
+        @test size(Pk0) == (system.ndim, system.nadw)
+        @test Pk0[1, 1] ≈ 1.0  # |1⟩
+        @test Pk0[2, 1] ≈ 0.0
+        
+        # 時間発展
+        dt = 1.0  # [fs]
+        t_end = 100.0  # [fs]
+        
+        println("\nTime evolution:")
+        println("  dt = $dt fs")
+        println("  t_end = $t_end fs")
+        
+        times, pops = evolve(system, Pb0, Pk0, (0.0, t_end), dt)
+        
+        println("\nResults:")
+        println("  Number of time steps: $(length(times))")
+        println("  Initial population: p₁=$(pops[1,1]), p₂=$(pops[2,1])")
+        println("  Final population: p₁=$(pops[1,end]), p₂=$(pops[2,end])")
+        
+        # 基本的なテスト
+        @test length(times) == Int(t_end / dt) + 1
+        @test times[1] ≈ 0.0
+        @test times[end] ≈ t_end
+        
+        # 初期状態の確認
+        @test pops[1, 1] ≈ 1.0 atol=1e-10
+        @test pops[2, 1] ≈ 0.0 atol=1e-10
+        
+        # 何らかのダイナミクスが起きているか確認
+        @test pops[1, end] != pops[1, 1]  # 時間変化がある
+        
+        println("\n=== Test passed! ===")
+    end
+    
+    @testset "HSEOM population calculation" begin
+        println("\n=== HSEOM population calculation ===")
+        
+        # シンプルな系でポピュレーション計算を確認
+        H = ComplexF64[0 100; 100 0] * icm2ifs
+        V = ComplexF64[1 0; 0 -1]
+        
+        expon = ComplexF64[0.01]
+        coeff = ComplexF64[0.001]
+        bath = Bath(expon, coeff, V; add_conjugate=true)
+        noise = Noise(bath)
+        
+        D = build_tridiagonal_D(noise.nterms, 0.05)
+        system = HSEOMSystem(H, noise, D, 3)
+        
+        # |1⟩ で始める → ρ₁₁ = 1, ρ₂₂ = 0
+        Pb0 = initial_adw(system, 1)
+        Pk0 = initial_adw(system, 1)
+        
+        # t=0 でのポピュレーション
+        ndim = system.ndim
+        nadw = system.nadw
+        
+        p1_t0 = real(sum(Pk0[1, n] * conj(Pb0[1, n]) for n in 1:nadw))
+        p2_t0 = real(sum(Pk0[2, n] * conj(Pb0[2, n]) for n in 1:nadw))
+        
+        println("t=0: p₁ = $p1_t0, p₂ = $p2_t0, total = $(p1_t0 + p2_t0)")
+        
+        @test p1_t0 ≈ 1.0
+        @test p2_t0 ≈ 0.0
+        
+        # |2⟩ で始める → ρ₁₁ = 0, ρ₂₂ = 1
+        Pb0_2 = initial_adw(system, 2)
+        Pk0_2 = initial_adw(system, 2)
+        
+        p1_state2 = real(sum(Pk0_2[1, n] * conj(Pb0_2[1, n]) for n in 1:nadw))
+        p2_state2 = real(sum(Pk0_2[2, n] * conj(Pb0_2[2, n]) for n in 1:nadw))
+        
+        println("State |2⟩: p₁ = $p1_state2, p₂ = $p2_state2")
+        
+        @test p1_state2 ≈ 0.0
+        @test p2_state2 ≈ 1.0
+        
+        # 重ね合わせ |+⟩ = (|1⟩ + |2⟩)/√2 → ρ₁₁ = ρ₂₂ = 0.5
+        psi_plus = ComplexF64[1/sqrt(2), 1/sqrt(2)]
+        Pb0_plus = initial_adw(system, psi_plus)
+        Pk0_plus = initial_adw(system, psi_plus)
+        
+        p1_plus = real(sum(Pk0_plus[1, n] * conj(Pb0_plus[1, n]) for n in 1:nadw))
+        p2_plus = real(sum(Pk0_plus[2, n] * conj(Pb0_plus[2, n]) for n in 1:nadw))
+        
+        println("State |+⟩: p₁ = $p1_plus, p₂ = $p2_plus")
+        
+        @test p1_plus ≈ 0.5 atol=1e-10
+        @test p2_plus ≈ 0.5 atol=1e-10
         
         println("\n=== Test passed! ===")
     end
