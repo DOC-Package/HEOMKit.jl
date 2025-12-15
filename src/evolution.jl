@@ -1,9 +1,13 @@
-"""    lsrk4!(P, dt, liouvillian!, system)
+"""    lsrk4!(P, dt, liouvillian!, system; parallel=false)
 
 One step of low-storage RK4 (in-place).
-Liouville 演算子は `liouvillian!(dP, P, system)` の形式。
+Liouville 演算子は `liouvillian!(dP, P, system; parallel)` の形式。
+
+# Arguments
+- `parallel::Bool`: If true, use multi-threading in liouvillian.
 """
-function lsrk4!(P::Matrix{ComplexF64}, dt::Real, liouvillian!::Function, system)
+function lsrk4!(P::Matrix{ComplexF64}, dt::Real, liouvillian!::Function, system;
+                parallel::Bool=false)
     A = (0.0, -1.0, -1.0, -1.0)
     B = (1.0/3.0, 3.0/4.0, 2.0/3.0, 1.0/4.0)
     
@@ -11,7 +15,7 @@ function lsrk4!(P::Matrix{ComplexF64}, dt::Real, liouvillian!::Function, system)
     tmp = similar(P)
     
     for (α, β) in zip(A, B)
-        liouvillian!(tmp, P, system)
+        liouvillian!(tmp, P, system; parallel=parallel)
         @. dP = α * dP + dt * tmp
         @. P += β * dP
     end
@@ -19,13 +23,14 @@ function lsrk4!(P::Matrix{ComplexF64}, dt::Real, liouvillian!::Function, system)
     return nothing
 end
 
-"""    lsrk4(P, dt, liouvillian!, system) → P_new
+"""    lsrk4(P, dt, liouvillian!, system; parallel=false) → P_new
 
 One step of low-storage RK4 (allocating).
 """
-function lsrk4(P::Matrix{ComplexF64}, dt::Real, liouvillian!::Function, system)
+function lsrk4(P::Matrix{ComplexF64}, dt::Real, liouvillian!::Function, system;
+               parallel::Bool=false)
     P_new = copy(P)
-    lsrk4!(P_new, dt, liouvillian!, system)
+    lsrk4!(P_new, dt, liouvillian!, system; parallel=parallel)
     return P_new
 end
 
@@ -46,9 +51,11 @@ HSEOM の時間発展（bra/ket 同時発展）。
 - `Pk0::Matrix{ComplexF64}`: 初期 ket 側 ADW (ndim × nadw)
 - `tspan::Tuple{Real,Real}`: 時間範囲 (t_start, t_end)
 - `dt::Real`: 時間刻み
+- `parallel::Bool`: If true, use multi-threading for ADW loop (default: false)
 """
 function evolve(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{ComplexF64},
                 tspan::Tuple{Real,Real}, dt::Real;
+                parallel::Bool=false,
                 callback=nothing,
                 savefile::Union{String,Nothing}=nothing, save_interval::Int=100)
     t_start, t_end = tspan
@@ -97,8 +104,8 @@ function evolve(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{Comple
     
     # Time evolution loop
     for step in 1:nsteps
-        lsrk4!(Pb, dt, liouville_bra!, system)
-        lsrk4!(Pk, dt, liouville_ket!, system)
+        lsrk4!(Pb, dt, liouville_bra!, system; parallel=parallel)
+        lsrk4!(Pk, dt, liouville_ket!, system; parallel=parallel)
         t += dt
         times[step + 1] = t
         
@@ -140,9 +147,13 @@ end
 """    evolve(system::HEOMSystem, P0, tspan, dt; ...) → (times, populations)
 
 Perform HEOM time evolution.
+
+# Arguments
+- `parallel::Bool`: If true, use multi-threading for ADO loop (default: false)
 """
 function evolve(system::HEOMSystem, P0::Matrix{ComplexF64}, 
                 tspan::Tuple{Real,Real}, dt::Real;
+                parallel::Bool=false,
                 liouvillian::Function=liouville!, callback=nothing,
                 savefile::Union{String,Nothing}=nothing, save_interval::Int=100)
     t_start, t_end = tspan
@@ -187,7 +198,7 @@ function evolve(system::HEOMSystem, P0::Matrix{ComplexF64},
     
     # Time evolution loop
     for step in 1:nsteps
-        lsrk4!(P, dt, liouvillian, system)
+        lsrk4!(P, dt, liouvillian, system; parallel=parallel)
         t += dt
         times[step + 1] = t
         

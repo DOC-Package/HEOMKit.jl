@@ -142,11 +142,15 @@ end
 # Liouville operator
 # =====================================
 
-"""    liouville!(dP, P, system)
+"""    liouville!(dP, P, system; parallel=false)
 
 Apply HEOM Liouvillian to P (in-place).
+
+# Arguments
+- `parallel::Bool`: If true, use multi-threading for ADO loop.
 """
-function liouville!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HEOMSystem)
+function liouville!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HEOMSystem;
+                    parallel::Bool=false)
     (; matrices, operators, noise, ado_idx, idx_plus, idx_minus, nado, ndim2) = system
     (; Ls, Vx, Vl, Vr) = matrices
     (; ngamma, phi, theta_l, theta_r) = operators
@@ -154,48 +158,66 @@ function liouville!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HEOMS
     
     dP .= 0.0 + 0.0im
     
-    @inbounds for n in 1:nado
-        # システム項: -i[H, ρₙ]
-        @views mul!(dP[:, n], Ls, P[:, n], 1.0, 1.0)
-        
-        # 減衰項: -Σₖ nₖγₖ ρₙ
-        @views dP[:, n] .-= ngamma[n] .* P[:, n]
-        
-        # 各熱浴について処理
-        for ibath in 1:nbath
-            jstart = noise.jstart_bath[ibath]
-            nterms_b = noise.nterms_bath[ibath]
-            jmid = jstart + nterms_b ÷ 2 - 1
-            jend = jstart + nterms_b - 1
-            
-            # phi 項（前進接続）
-            PTMPx = zeros(ComplexF64, ndim2)
-            for j in jstart:jend
-                np = idx_plus[j, n]
-                if np > 0
-                    @views PTMPx .+= phi[j, n] .* P[:, np]
-                end
-            end
-            @views mul!(dP[:, n], Vx[ibath], PTMPx, -1.0im, 1.0)
-            
-            # theta 項（後退接続）
-            PTMPl = zeros(ComplexF64, ndim2)
-            PTMPr = zeros(ComplexF64, ndim2)
-            for j in jstart:jmid
-                nm = idx_minus[j, n]
-                if nm > 0
-                    @views PTMPl .+= theta_l[j, n] .* P[:, nm]
-                end
-            end
-            for j in (jmid + 1):jend
-                nm = idx_minus[j, n]
-                if nm > 0
-                    @views PTMPr .+= theta_r[j, n] .* P[:, nm]
-                end
-            end
-            @views mul!(dP[:, n], Vl[ibath], PTMPl, -1.0im, 1.0)
-            @views mul!(dP[:, n], Vr[ibath], PTMPr, -1.0im, 1.0)
+    if parallel
+        Threads.@threads for n in 1:nado
+            _liouville_ado!(dP, P, n, Ls, Vx, Vl, Vr, ngamma, phi, theta_l, theta_r,
+                           noise, idx_plus, idx_minus, ndim2)
         end
+    else
+        @inbounds for n in 1:nado
+            _liouville_ado!(dP, P, n, Ls, Vx, Vl, Vr, ngamma, phi, theta_l, theta_r,
+                           noise, idx_plus, idx_minus, ndim2)
+        end
+    end
+    
+    return nothing
+end
+
+"""Internal function for single ADO Liouvillian computation."""
+@inline function _liouville_ado!(dP, P, n, Ls, Vx, Vl, Vr, ngamma, phi, theta_l, theta_r,
+                                 noise, idx_plus, idx_minus, ndim2)
+    nbath = noise.nbath
+    
+    # システム項: -i[H, ρₙ]
+    @views mul!(dP[:, n], Ls, P[:, n], 1.0, 1.0)
+    
+    # 減衰項: -Σₖ nₖγₖ ρₙ
+    @views dP[:, n] .-= ngamma[n] .* P[:, n]
+    
+    # 各熱浴について処理
+    @inbounds for ibath in 1:nbath
+        jstart = noise.jstart_bath[ibath]
+        nterms_b = noise.nterms_bath[ibath]
+        jmid = jstart + nterms_b ÷ 2 - 1
+        jend = jstart + nterms_b - 1
+        
+        # phi 項（前進接続）
+        PTMPx = zeros(ComplexF64, ndim2)
+        for j in jstart:jend
+            np = idx_plus[j, n]
+            if np > 0
+                @views PTMPx .+= phi[j, n] .* P[:, np]
+            end
+        end
+        @views mul!(dP[:, n], Vx[ibath], PTMPx, -1.0im, 1.0)
+        
+        # theta 項（後退接続）
+        PTMPl = zeros(ComplexF64, ndim2)
+        PTMPr = zeros(ComplexF64, ndim2)
+        for j in jstart:jmid
+            nm = idx_minus[j, n]
+            if nm > 0
+                @views PTMPl .+= theta_l[j, n] .* P[:, nm]
+            end
+        end
+        for j in (jmid + 1):jend
+            nm = idx_minus[j, n]
+            if nm > 0
+                @views PTMPr .+= theta_r[j, n] .* P[:, nm]
+            end
+        end
+        @views mul!(dP[:, n], Vl[ibath], PTMPl, -1.0im, 1.0)
+        @views mul!(dP[:, n], Vr[ibath], PTMPr, -1.0im, 1.0)
     end
     
     return nothing

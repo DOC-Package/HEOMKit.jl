@@ -54,10 +54,10 @@ println("  Temperature T = $T K")
 # PSWF expansion parameters
 ω_min = -150.0   # Lower frequency bound [cm⁻¹]
 ω_max = 200.0    # Upper frequency bound [cm⁻¹]
-n_terms = 12     # Number of PSWF terms
+n_terms = 10     # Number of PSWF terms
 T_pswf = 700.0  # Time duration parameter [fs]
 # Time evolution parameters
-t_end = 10.0    # [fs]
+t_end = 100.0    # [fs]
 dt = 0.25         # [fs]
 
 println("\nPSWF Expansion Parameters:")
@@ -173,7 +173,7 @@ println("  Time step: $dt fs")
 println("  Total steps: $(Int(t_end/dt))")
 
 println("\nRunning dynamics...")
-@time times, pops = evolve(system, Pb0, Pk0, (0.0, t_end), dt)
+@time times, pops = evolve(system, Pb0, Pk0, (0.0, t_end), dt; parallel=true, savefile="pop.dat", save_interval=10)
 
 println("\nResults:")
 println("  Initial population: p₁=$(round(pops[1,1], digits=4)), p₂=$(round(pops[2,1], digits=4))")

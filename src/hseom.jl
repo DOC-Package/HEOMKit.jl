@@ -206,7 +206,8 @@ end
 # =====================================
 
 """
-    liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
+    liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem;
+                   parallel::Bool=false)
 
 HSEOM の ket 側 Liouville 演算子を適用（in-place）。
 一般形の D 行列に対応。
@@ -215,8 +216,12 @@ HSEOM の ket 側 Liouville 演算子を適用（in-place）。
        + Σₖₗ nₖ Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
        - i Σₖ cₖ S |φₙ₊₁ₖ⟩
        - i Σₖ nₖ φₖ(0) S |φₙ₋₁ₖ⟩
+
+# Arguments
+- `parallel::Bool`: If true, use multi-threading for ADW loop.
 """
-function liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
+function liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem;
+                        parallel::Bool=false)
     (; H, V, D, noise, adw_idx, nadw, ndim, nterms) = system
     (; idx_plus, idx_minus, idx_minus_plus) = system
     (; phi0) = system  # φₖ(0) の値
@@ -225,72 +230,91 @@ function liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::H
     
     dP .= 0.0 + 0.0im
     
-    @inbounds for n in 1:nadw
-        # システム項: -i * H * P(:,n)
-        @views mul!(dP[:, n], H, P[:, n], -1.0im, 1.0)
-        
-        # 各熱浴について処理
-        for ibath in 1:nbath
-            jstart = noise.jstart_bath[ibath]
-            nterms_b = noise.nterms_bath[ibath]
-            jend = jstart + nterms_b - 1
-            
-            # D 行列項: Σₖₗ nₖ Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
-            for k in jstart:jend
-                nk = adw_idx[k, n]
-                if nk == 0
-                    continue
-                end
-                
-                for ell in jstart:jend
-                    Dkl = D[k - jstart + 1, ell - jstart + 1]
-                    if Dkl == 0.0
-                        continue
-                    end
-                    
-                    # インデックス: n - 1_k + 1_ℓ
-                    idx_target = idx_minus_plus[k, ell, n]
-                    if idx_target > 0
-                        coef = Float64(nk) * Dkl
-                        @views dP[:, n] .+= coef .* P[:, idx_target]
-                    end
-                end
-            end
-            
-            # 相互作用項
-            PTMPx = zeros(ComplexF64, ndim)
-            
-            # 後退接続項: -i Σₖ nₖ φₖ(0) S |φₙ₋₁ₖ⟩
-            for k in jstart:jend
-                nk = adw_idx[k, n]
-                if nk == 0
-                    continue
-                end
-                nm = idx_minus[k, n]
-                if nm > 0
-                    phi0_k = phi0[k - jstart + 1]
-                    @views PTMPx .+= Float64(nk) * phi0_k .* P[:, nm]
-                end
-            end
-            
-            # 前進接続項: -i Σₖ cₖ S |φₙ₊₁ₖ⟩
-            for k in jstart:jend
-                np = idx_plus[k, n]
-                if np > 0
-                    @views PTMPx .+= noise.coeff[k] .* P[:, np]
-                end
-            end
-            
-            # -i * V * PTMP
-            @views mul!(dP[:, n], V[ibath], PTMPx, -1.0im, 1.0)
+    if parallel
+        Threads.@threads for n in 1:nadw
+            _liouville_ket_adw!(dP, P, n, H, V, D, noise, adw_idx, phi0,
+                               idx_plus, idx_minus, idx_minus_plus, ndim)
+        end
+    else
+        @inbounds for n in 1:nadw
+            _liouville_ket_adw!(dP, P, n, H, V, D, noise, adw_idx, phi0,
+                               idx_plus, idx_minus, idx_minus_plus, ndim)
         end
     end
     
     return nothing
 end
 
+"""Internal function for single ADW ket-side Liouvillian computation."""
+@inline function _liouville_ket_adw!(dP, P, n, H, V, D, noise, adw_idx, phi0,
+                                     idx_plus, idx_minus, idx_minus_plus, ndim)
+    nbath = noise.nbath
+    
+    # システム項: -i * H * P(:,n)
+    @views mul!(dP[:, n], H, P[:, n], -1.0im, 1.0)
+    
+    # 各熱浴について処理
+    @inbounds for ibath in 1:nbath
+        jstart = noise.jstart_bath[ibath]
+        nterms_b = noise.nterms_bath[ibath]
+        jend = jstart + nterms_b - 1
+        
+        # D 行列項: Σₖₗ nₖ Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
+        for k in jstart:jend
+            nk = adw_idx[k, n]
+            if nk == 0
+                continue
+            end
+            
+            for ell in jstart:jend
+                Dkl = D[k - jstart + 1, ell - jstart + 1]
+                if Dkl == 0.0
+                    continue
+                end
+                
+                # インデックス: n - 1_k + 1_ℓ
+                idx_target = idx_minus_plus[k, ell, n]
+                if idx_target > 0
+                    coef = Float64(nk) * Dkl
+                    @views dP[:, n] .+= coef .* P[:, idx_target]
+                end
+            end
+        end
+        
+        # 相互作用項
+        PTMPx = zeros(ComplexF64, ndim)
+        
+        # 後退接続項: -i Σₖ nₖ φₖ(0) S |φₙ₋₁ₖ⟩
+        for k in jstart:jend
+            nk = adw_idx[k, n]
+            if nk == 0
+                continue
+            end
+            nm = idx_minus[k, n]
+            if nm > 0
+                phi0_k = phi0[k - jstart + 1]
+                @views PTMPx .+= Float64(nk) * phi0_k .* P[:, nm]
+            end
+        end
+        
+        # 前進接続項: -i Σₖ cₖ S |φₙ₊₁ₖ⟩
+        for k in jstart:jend
+            np = idx_plus[k, n]
+            if np > 0
+                @views PTMPx .+= noise.coeff[k] .* P[:, np]
+            end
+        end
+        
+        # -i * V * PTMP
+        @views mul!(dP[:, n], V[ibath], PTMPx, -1.0im, 1.0)
+    end
+    
+    return nothing
+end
+
 """
-    liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
+    liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem;
+                   parallel::Bool=false)
 
 HSEOM の bra 側 Liouville 演算子を適用（in-place）。
 一般形の D 行列に対応。
@@ -299,8 +323,12 @@ HSEOM の bra 側 Liouville 演算子を適用（in-place）。
        - Σₖₗ (nₖ+1) Dₖₗ |ψₙ₊₁ₖ₋₁ₗ⟩
        - i Σₖ cₖ* S |ψₙ₋₁ₖ⟩
        - i Σₖ (nₖ+1) φₖ(0) S |ψₙ₊₁ₖ⟩
+
+# Arguments
+- `parallel::Bool`: If true, use multi-threading for ADW loop.
 """
-function liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
+function liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem;
+                        parallel::Bool=false)
     (; H, V, D, noise, adw_idx, nadw, ndim, nterms) = system
     (; idx_plus, idx_minus, idx_plus_minus) = system
     (; phi0) = system  # φₖ(0) の値
@@ -309,59 +337,77 @@ function liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::H
     
     dP .= 0.0 + 0.0im
     
-    @inbounds for n in 1:nadw
-        # システム項: -i * H * P(:,n)
-        @views mul!(dP[:, n], H, P[:, n], -1.0im, 1.0)
-        
-        # 各熱浴について処理
-        for ibath in 1:nbath
-            jstart = noise.jstart_bath[ibath]
-            nterms_b = noise.nterms_bath[ibath]
-            jend = jstart + nterms_b - 1
-            
-            # D 行列項: -Σₖₗ (nₖ+1) Dₖₗ |ψₙ₊₁ₖ₋₁ₗ⟩
-            for k in jstart:jend
-                nk = adw_idx[k, n]
-                
-                for ell in jstart:jend
-                    Dkl = D[k - jstart + 1, ell - jstart + 1]
-                    if Dkl == 0.0
-                        continue
-                    end
-                    
-                    # インデックス: n + 1_k - 1_ℓ
-                    idx_target = idx_plus_minus[k, ell, n]
-                    if idx_target > 0
-                        coef = -Float64(nk + 1) * Dkl
-                        @views dP[:, n] .+= coef .* P[:, idx_target]
-                    end
-                end
-            end
-            
-            # 相互作用項
-            PTMPx = zeros(ComplexF64, ndim)
-            
-            # 前進接続項: -i Σₖ (nₖ+1) φₖ(0) S |ψₙ₊₁ₖ⟩
-            for k in jstart:jend
-                nk = adw_idx[k, n]
-                np = idx_plus[k, n]
-                if np > 0
-                    phi0_k = phi0[k - jstart + 1]
-                    @views PTMPx .+= Float64(nk + 1) * phi0_k .* P[:, np]
-                end
-            end
-            
-            # 後退接続項: -i Σₖ cₖ* S |ψₙ₋₁ₖ⟩
-            for k in jstart:jend
-                nm = idx_minus[k, n]
-                if nm > 0
-                    @views PTMPx .+= conj(noise.coeff[k]) .* P[:, nm]
-                end
-            end
-            
-            # -i * V * PTMP
-            @views mul!(dP[:, n], V[ibath], PTMPx, -1.0im, 1.0)
+    if parallel
+        Threads.@threads for n in 1:nadw
+            _liouville_bra_adw!(dP, P, n, H, V, D, noise, adw_idx, phi0,
+                               idx_plus, idx_minus, idx_plus_minus, ndim)
         end
+    else
+        @inbounds for n in 1:nadw
+            _liouville_bra_adw!(dP, P, n, H, V, D, noise, adw_idx, phi0,
+                               idx_plus, idx_minus, idx_plus_minus, ndim)
+        end
+    end
+    
+    return nothing
+end
+
+"""Internal function for single ADW bra-side Liouvillian computation."""
+@inline function _liouville_bra_adw!(dP, P, n, H, V, D, noise, adw_idx, phi0,
+                                     idx_plus, idx_minus, idx_plus_minus, ndim)
+    nbath = noise.nbath
+    
+    # システム項: -i * H * P(:,n)
+    @views mul!(dP[:, n], H, P[:, n], -1.0im, 1.0)
+    
+    # 各熱浴について処理
+    @inbounds for ibath in 1:nbath
+        jstart = noise.jstart_bath[ibath]
+        nterms_b = noise.nterms_bath[ibath]
+        jend = jstart + nterms_b - 1
+        
+        # D 行列項: -Σₖₗ (nₖ+1) Dₖₗ |ψₙ₊₁ₖ₋₁ₗ⟩
+        for k in jstart:jend
+            nk = adw_idx[k, n]
+            
+            for ell in jstart:jend
+                Dkl = D[k - jstart + 1, ell - jstart + 1]
+                if Dkl == 0.0
+                    continue
+                end
+                
+                # インデックス: n + 1_k - 1_ℓ
+                idx_target = idx_plus_minus[k, ell, n]
+                if idx_target > 0
+                    coef = -Float64(nk + 1) * Dkl
+                    @views dP[:, n] .+= coef .* P[:, idx_target]
+                end
+            end
+        end
+        
+        # 相互作用項
+        PTMPx = zeros(ComplexF64, ndim)
+        
+        # 前進接続項: -i Σₖ (nₖ+1) φₖ(0) S |ψₙ₊₁ₖ⟩
+        for k in jstart:jend
+            nk = adw_idx[k, n]
+            np = idx_plus[k, n]
+            if np > 0
+                phi0_k = phi0[k - jstart + 1]
+                @views PTMPx .+= Float64(nk + 1) * phi0_k .* P[:, np]
+            end
+        end
+        
+        # 後退接続項: -i Σₖ cₖ* S |ψₙ₋₁ₖ⟩
+        for k in jstart:jend
+            nm = idx_minus[k, n]
+            if nm > 0
+                @views PTMPx .+= conj(noise.coeff[k]) .* P[:, nm]
+            end
+        end
+        
+        # -i * V * PTMP
+        @views mul!(dP[:, n], V[ibath], PTMPx, -1.0im, 1.0)
     end
     
     return nothing
