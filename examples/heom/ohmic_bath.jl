@@ -16,8 +16,8 @@ bcf = BosonicBCF(sd, T)
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 200.0   # [fs]
-nsamples = 200
+tmax = 700.0   # [fs]
+nsamples = 500
 eps = 1e-3     # ESPRIT tolerance
 
 dt = (tmax - tmin) / (nsamples - 1)
@@ -65,7 +65,7 @@ println("  Number of ADOs: $(system.nado)")
 P0 = initial_ado(system, 1)
 
 # Time evolution parameters
-t_end = 200.0    # [fs]
+t_end = 700.0    # [fs]
 dt_evolve = 0.5  # [fs]
 
 println("\nTime Evolution:")

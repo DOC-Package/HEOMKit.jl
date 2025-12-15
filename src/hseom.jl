@@ -42,6 +42,7 @@ HSEOM 完全システム。2モード同時変化のインデックスを含む�
 - `V::Vector{Matrix{ComplexF64}}`: 相互作用演算子（各熱浴）
 - `noise::Noise`: ノイズパラメータ
 - `D::Matrix{ComplexF64}`: BCF 展開の D 行列（∂ₜφₖ = Σₗ Dₖₗ φₗ）
+- `phi0::Vector{ComplexF64}`: φₖ(0) の初期値（相互作用項で使用）
 - `operators::HSEOMOperators`: HSEOM 演算子
 - `adw_idx::Matrix{Int}`: 階層インデックス
 - `idx_plus::Matrix{Int}`: 単一モード前進インデックス
@@ -57,6 +58,7 @@ struct HSEOMSystem
     V::Vector{Matrix{ComplexF64}}
     noise::Noise
     D::Matrix{ComplexF64}
+    phi0::Vector{ComplexF64}
     operators::HSEOMOperators
     adw_idx::Matrix{Int}
     idx_plus::Matrix{Int}
@@ -79,6 +81,7 @@ HSEOM システムを構築する。
 - `noise::Noise`: ノイズパラメータ
 - `D::AbstractMatrix`: BCF 展開の D 行列（∂ₜφₖ = Σₗ Dₖₗ φₗ）
 - `ndepth::Int`: 階層の深さ
+- `phi0::AbstractVector`: φₖ(0) の初期値（省略時はすべて 1.0）
 - `hierarchy::Symbol`: 階層構築方法 (:depth または :width)
 
 # Example
@@ -88,10 +91,14 @@ bath = Bath(expon, coeff, V)
 noise = Noise(bath)
 # 三重対角 D 行列の例（Bessel展開）
 D = build_tridiagonal_D(nterms, gamma_c)
-system = HSEOMSystem(H, noise, D, 5)
+phi0 = ones(nterms)  # Bessel展開では φₖ(0) = Jₖ(0) = δₖ₀
+phi0[1] = 1.0
+phi0[2:end] .= 0.0
+system = HSEOMSystem(H, noise, D, 5; phi0=phi0)
 ```
 """
 function HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, ndepth::Int;
+                     phi0::Union{AbstractVector, Nothing}=nothing,
                      hierarchy::Symbol=:depth)
     ndim = size(H, 1)
     H_complex = Matrix{ComplexF64}(H)
@@ -103,6 +110,16 @@ function HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, ndepth:
     # 階層インデックスを構築
     nterms = noise.nterms
     @assert size(D, 1) == nterms && size(D, 2) == nterms "D matrix size must be ($nterms, $nterms)"
+    
+    # φₖ(0) の初期値を設定
+    # デフォルトは Bessel 展開: φₖ(0) = Jₖ(0) = δₖ₀ (k=1のみ1, 他は0)
+    if phi0 === nothing
+        phi0_vec = zeros(ComplexF64, nterms)
+        phi0_vec[1] = 1.0  # J₀(0) = 1
+    else
+        @assert length(phi0) == nterms "phi0 length must be $nterms"
+        phi0_vec = Vector{ComplexF64}(phi0)
+    end
     
     if hierarchy == :depth
         nadw, adw_idx, idx_plus, idx_minus = hierarchy_index_depth(nterms, ndepth)
@@ -123,7 +140,7 @@ function HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, ndepth:
     operators = HSEOMOperators(adw_idx)
     
     return HSEOMSystem(
-        H_complex, V, noise, D_complex, operators, adw_idx, idx_plus, idx_minus,
+        H_complex, V, noise, D_complex, phi0_vec, operators, adw_idx, idx_plus, idx_minus,
         hseom_idx.idx_minus_plus,
         hseom_idx.idx_plus_minus,
         nadw, ndim, nterms
@@ -177,33 +194,19 @@ end
     liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
 
 HSEOM の ket 側 Liouville 演算子を適用（in-place）。
-Fortran の Liouville_ket に完全対応。
+一般形の D 行列に対応。
 
-Fortran コード:
-```
-P1(:,n) = - iconst*smul(Hs,P(:,n))
-P1(:,n) = P1(:,n) - dble(nvec(0,n))*gamc*P(:,nmpv2(0,n))
-do j = 1, Jmax-1
-    P1(:,n) = P1(:,n) + 0.5d0*dble(nvec(j,n))*gamc*(P(:,nmpv1(j,n))-P(:,nmpv2(j,n)))
-end do
-PTMP(:) = dble(nvec(0,n))*bessel_jn(0,0d0)*P(:,nmvec(0,n))
-do j = 0, Jmax-1
-    PTMP(:) = PTMP(:) + ck(j)*P(:,npvec(j,n)) 
-end do
-P1(:,n) = P1(:,n) - iconst*smul(V,PTMP) 
-```
-
-nmpv1(k,n) = n[k]-1, n[k-1]+1 = idx_minus_plus[k, k-1, n]
-nmpv2(k,n) = n[k]-1, n[k+1]+1 = idx_minus_plus[k, k+1, n]
+∂ₛ|φₙ⟩ = -iHₛ|φₙ⟩ 
+       + Σₖₗ nₖ Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
+       - i Σₖ cₖ S |φₙ₊₁ₖ⟩
+       - i Σₖ nₖ φₖ(0) S |φₙ₋₁ₖ⟩
 """
 function liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
     (; H, V, D, noise, adw_idx, nadw, ndim, nterms) = system
     (; idx_plus, idx_minus, idx_minus_plus) = system
+    (; phi0) = system  # φₖ(0) の値
     
     nbath = noise.nbath
-    
-    # D 行列から γc を取得（D[1,2] = -γc なので）
-    gamma_c = -real(D[1, 2])
     
     dP .= 0.0 + 0.0im
     
@@ -211,63 +214,52 @@ function liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::H
         # システム項: -i * H * P(:,n)
         @views mul!(dP[:, n], H, P[:, n], -1.0im, 1.0)
         
-        # 各熱浴について D 行列項を処理
+        # 各熱浴について処理
         for ibath in 1:nbath
             jstart = noise.jstart_bath[ibath]
             nterms_b = noise.nterms_bath[ibath]
             jend = jstart + nterms_b - 1
             
-            # j=0 (k=jstart): -nvec(0,n) * gamc * P(:, nmpv2(0,n))
-            # nmpv2(0,n) = n[0]-1, n[1]+1 = idx_minus_plus[jstart, jstart+1, n]
-            k = jstart
-            nk = adw_idx[k, n]
-            if nk > 0 && k + 1 <= nterms
-                nm_pl = idx_minus_plus[k, k+1, n]
-                if nm_pl > 0
-                    coef = -Float64(nk) * gamma_c
-                    @views dP[:, n] .+= coef .* P[:, nm_pl]
-                end
-            end
-            
-            # j=1 to Jmax-1 (k=jstart+1 to jend-1):
-            # +0.5 * nvec(j,n) * gamc * (P(:,nmpv1(j,n)) - P(:,nmpv2(j,n)))
-            for k in (jstart+1):(jend-1)
+            # D 行列項: Σₖₗ nₖ Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
+            for k in jstart:jend
                 nk = adw_idx[k, n]
                 if nk == 0
                     continue
                 end
                 
-                coef = 0.5 * Float64(nk) * gamma_c
-                
-                # nmpv1(k,n) = n[k]-1, n[k-1]+1
-                nm_pl_prev = idx_minus_plus[k, k-1, n]
-                if nm_pl_prev > 0
-                    @views dP[:, n] .+= coef .* P[:, nm_pl_prev]
-                end
-                
-                # nmpv2(k,n) = n[k]-1, n[k+1]+1
-                nm_pl_next = idx_minus_plus[k, k+1, n]
-                if nm_pl_next > 0
-                    @views dP[:, n] .-= coef .* P[:, nm_pl_next]
+                for ell in jstart:jend
+                    Dkl = D[k - jstart + 1, ell - jstart + 1]
+                    if Dkl == 0.0
+                        continue
+                    end
+                    
+                    # インデックス: n - 1_k + 1_ℓ
+                    idx_target = idx_minus_plus[k, ell, n]
+                    if idx_target > 0
+                        coef = Float64(nk) * Dkl
+                        @views dP[:, n] .+= coef .* P[:, idx_target]
+                    end
                 end
             end
             
             # 相互作用項
             PTMPx = zeros(ComplexF64, ndim)
             
-            # 後退接続項: nvec(0,n) * bessel_jn(0,0) * P(:,nmvec(0,n))
-            # bessel_jn(0,0) = 1.0
-            k0 = jstart
-            nk0 = adw_idx[k0, n]
-            if nk0 > 0
-                nm = idx_minus[k0, n]
+            # 後退接続項: -i Σₖ nₖ φₖ(0) S |φₙ₋₁ₖ⟩
+            for k in jstart:jend
+                nk = adw_idx[k, n]
+                if nk == 0
+                    continue
+                end
+                nm = idx_minus[k, n]
                 if nm > 0
-                    @views PTMPx .+= Float64(nk0) .* P[:, nm]
+                    phi0_k = phi0[k - jstart + 1]
+                    @views PTMPx .+= Float64(nk) * phi0_k .* P[:, nm]
                 end
             end
             
-            # 前進接続項: ck(j) * P(:,npvec(j,n)) for j=0 to Jmax-1
-            for k in jstart:(jend-1)
+            # 前進接続項: -i Σₖ cₖ S |φₙ₊₁ₖ⟩
+            for k in jstart:jend
                 np = idx_plus[k, n]
                 if np > 0
                     @views PTMPx .+= noise.coeff[k] .* P[:, np]
@@ -286,33 +278,19 @@ end
     liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
 
 HSEOM の bra 側 Liouville 演算子を適用（in-place）。
-Fortran の Liouville_bra に完全対応。
+一般形の D 行列に対応。
 
-Fortran コード:
-```
-P1(:,n) = - iconst*smul(Hs,P(:,n))
-P1(:,n) = P1(:,n) + dble(nvec(0,n)+1)*gamc*P(:,npmv2(0,n))
-do j = 1, Jmax-1
-    P1(:,n) = P1(:,n) - 0.5d0*dble(nvec(j,n)+1)*gamc*(P(:,npmv1(j,n))-P(:,npmv2(j,n)))
-end do
-PTMP(:) = dble(nvec(0,n)+1)*bessel_jn(0,0d0)*P(:,npvec(0,n))
-do j = 0, Jmax-1
-    PTMP(:) = PTMP(:) + conjg(ck(j))*P(:,nmvec(j,n)) 
-end do
-P1(:,n) = P1(:,n) - iconst*smul(V,PTMP)
-```
-
-npmv1(k,n) = n[k]+1, n[k-1]-1 = idx_plus_minus[k, k-1, n]
-npmv2(k,n) = n[k]+1, n[k+1]-1 = idx_plus_minus[k, k+1, n]
+∂ₛ|ψₙ⟩ = -iHₛ|ψₙ⟩ 
+       - Σₖₗ (nₖ+1) Dₖₗ |ψₙ₊₁ₖ₋₁ₗ⟩
+       - i Σₖ cₖ* S |ψₙ₋₁ₖ⟩
+       - i Σₖ (nₖ+1) φₖ(0) S |ψₙ₊₁ₖ⟩
 """
 function liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem)
     (; H, V, D, noise, adw_idx, nadw, ndim, nterms) = system
     (; idx_plus, idx_minus, idx_plus_minus) = system
+    (; phi0) = system  # φₖ(0) の値
     
     nbath = noise.nbath
-    
-    # D 行列から γc を取得（D[1,2] = -γc なので）
-    gamma_c = -real(D[1, 2])
     
     dP .= 0.0 + 0.0im
     
@@ -320,58 +298,46 @@ function liouville_bra!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::H
         # システム項: -i * H * P(:,n)
         @views mul!(dP[:, n], H, P[:, n], -1.0im, 1.0)
         
-        # 各熱浴について D† 行列項を処理
+        # 各熱浴について処理
         for ibath in 1:nbath
             jstart = noise.jstart_bath[ibath]
             nterms_b = noise.nterms_bath[ibath]
             jend = jstart + nterms_b - 1
             
-            # j=0 (k=jstart): +(nvec(0,n)+1) * gamc * P(:, npmv2(0,n))
-            # npmv2(0,n) = n[0]+1, n[1]-1 = idx_plus_minus[jstart, jstart+1, n]
-            k = jstart
-            nk = adw_idx[k, n]
-            if k + 1 <= nterms
-                np_ml = idx_plus_minus[k, k+1, n]
-                if np_ml > 0
-                    coef = Float64(nk + 1) * gamma_c
-                    @views dP[:, n] .+= coef .* P[:, np_ml]
-                end
-            end
-            
-            # j=1 to Jmax-1 (k=jstart+1 to jend-1):
-            # -0.5 * (nvec(j,n)+1) * gamc * (P(:,npmv1(j,n)) - P(:,npmv2(j,n)))
-            for k in (jstart+1):(jend-1)
+            # D 行列項: -Σₖₗ (nₖ+1) Dₖₗ |ψₙ₊₁ₖ₋₁ₗ⟩
+            for k in jstart:jend
                 nk = adw_idx[k, n]
                 
-                coef = 0.5 * Float64(nk + 1) * gamma_c
-                
-                # npmv1(k,n) = n[k]+1, n[k-1]-1
-                np_ml_prev = idx_plus_minus[k, k-1, n]
-                if np_ml_prev > 0
-                    @views dP[:, n] .-= coef .* P[:, np_ml_prev]
-                end
-                
-                # npmv2(k,n) = n[k]+1, n[k+1]-1
-                np_ml_next = idx_plus_minus[k, k+1, n]
-                if np_ml_next > 0
-                    @views dP[:, n] .+= coef .* P[:, np_ml_next]
+                for ell in jstart:jend
+                    Dkl = D[k - jstart + 1, ell - jstart + 1]
+                    if Dkl == 0.0
+                        continue
+                    end
+                    
+                    # インデックス: n + 1_k - 1_ℓ
+                    idx_target = idx_plus_minus[k, ell, n]
+                    if idx_target > 0
+                        coef = -Float64(nk + 1) * Dkl
+                        @views dP[:, n] .+= coef .* P[:, idx_target]
+                    end
                 end
             end
             
             # 相互作用項
             PTMPx = zeros(ComplexF64, ndim)
             
-            # 前進接続項: (nvec(0,n)+1) * bessel_jn(0,0) * P(:,npvec(0,n))
-            # bessel_jn(0,0) = 1.0
-            k0 = jstart
-            nk0 = adw_idx[k0, n]
-            np = idx_plus[k0, n]
-            if np > 0
-                @views PTMPx .+= Float64(nk0 + 1) .* P[:, np]
+            # 前進接続項: -i Σₖ (nₖ+1) φₖ(0) S |ψₙ₊₁ₖ⟩
+            for k in jstart:jend
+                nk = adw_idx[k, n]
+                np = idx_plus[k, n]
+                if np > 0
+                    phi0_k = phi0[k - jstart + 1]
+                    @views PTMPx .+= Float64(nk + 1) * phi0_k .* P[:, np]
+                end
             end
             
-            # 後退接続項: conjg(ck(j)) * P(:,nmvec(j,n)) for j=0 to Jmax-1
-            for k in jstart:(jend-1)
+            # 後退接続項: -i Σₖ cₖ* S |ψₙ₋₁ₖ⟩
+            for k in jstart:jend
                 nm = idx_minus[k, n]
                 if nm > 0
                     @views PTMPx .+= conj(noise.coeff[k]) .* P[:, nm]

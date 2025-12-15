@@ -1,8 +1,8 @@
 """
-HSEOM Example: Two-Level System with Ohmic Bath (Chebyshev Expansion)
+HSEOM Example: Two-Level System with Ohmic Bath (PSWF Expansion)
 
 This example demonstrates:
-1. Chebyshev expansion of bath correlation function using QFiND
+1. PSWF (Prolate Spheroidal Wave Function) expansion of bath correlation function
 2. Construction of c (expansion coefficients) and D (derivative matrix)
 3. HSEOM dynamics with bra/ket simultaneous evolution
 4. Population dynamics visualization
@@ -11,30 +11,31 @@ For HSEOM, the BCF is expanded as:
     C(t) = Σₖ cₖ φₖ(t)
     ∂ₜφₖ = Σₗ Dₖₗ φₗ(t)
 
-where φₖ(t) = Jₖ(Ω*t) * exp(-i*ω̄*t) (Bessel-Chebyshev basis).
+where φₖ(t) are PSWF basis functions with bandwidth-limited property.
 """
 
 using KaisouEOM
 using KaisouEOM: icm2ifs, kB
 using QFiND
+using ProlateSpheroidalWaveFunctions
 using LinearAlgebra
 using CairoMakie
 
 println("=" ^ 60)
-println("HSEOM Example: Ohmic Bath with Chebyshev Expansion")
+println("HSEOM Example: Ohmic Bath with PSWF Expansion")
 println("=" ^ 60)
 
 # =============================================
 # 1. Spectral Density Parameters
 # =============================================
 println("\n" * "=" ^ 60)
-println("1. Setting up spectral density and Chebyshev expansion")
+println("1. Setting up spectral density and PSWF expansion")
 println("=" ^ 60)
 
 # Spectral density: J(ω) = α * ω^s * exp(-ω/γc)
 s = 1.0          # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γc = 50.0        # Cutoff frequency [cm⁻¹]
-λ = 10.0         # Reorganization energy [cm⁻¹] (smaller for stability)
+λ = 10.0         # Reorganization energy [cm⁻¹]
 T = 300.0        # Temperature [K]
 
 sd = PowerLawExpSD(s, γc; reorgene=λ)
@@ -47,24 +48,33 @@ println("  Reorganization energy λ = $λ cm⁻¹ (calc: $(round(reorgene_calc, 
 println("  Temperature T = $T K")
 
 # =============================================
-# 2. Chebyshev Expansion of BCF
+# 2. PSWF Expansion of BCF
 # =============================================
 
-# Chebyshev expansion parameters
-ω_min = -700.0   # Lower frequency bound [cm⁻¹]
-ω_max = 700.0    # Upper frequency bound [cm⁻¹]
-n_terms = 20     # Number of Chebyshev terms
+# PSWF expansion parameters
+ω_min = -150.0   # Lower frequency bound [cm⁻¹]
+ω_max = 200.0    # Upper frequency bound [cm⁻¹]
+n_terms = 12     # Number of PSWF terms
+T_pswf = 700.0  # Time duration parameter [fs]
+# Time evolution parameters
+t_end = 700.0    # [fs]
+dt = 0.25         # [fs]
 
-println("\nChebyshev Expansion Parameters:")
+println("\nPSWF Expansion Parameters:")
 println("  Frequency range: [$ω_min, $ω_max] cm⁻¹")
 println("  Number of terms: $n_terms")
+println("  Time duration: $T_pswf fs")
 
-# Perform Chebyshev expansion
-cheb = chebyshev_expansion(sd, T, ω_min, ω_max, n_terms)
+# Construct the quantum noise spectral density for PSWF expansion
+sbeta = BosonicQNSD(sd, T)
+f = w -> sbeta(w; scale=icm2ifs) / pi
 
-println("\nChebyshev Expansion Result:")
-println("  ω̄ = $(cheb.ω_bar) (center frequency)")
-println("  Ω = $(cheb.Ω) (half-width)")
+# Perform PSWF expansion
+pswfft = pswf_expansion_fourier(f, ω_min * icm2ifs, ω_max * icm2ifs, T_pswf, n_terms; pm=-1.0)
+
+println("\nPSWF Expansion Result:")
+println("  Bandwidth-limited: [$ω_min, $ω_max] cm⁻¹")
+println("  Number of coefficients: $(length(pswfft.coeffs))")
 
 # =============================================
 # 3. Extract c and D for HSEOM
@@ -73,11 +83,11 @@ println("\n" * "=" ^ 60)
 println("2. Extracting c (coefficients) and D (derivative matrix)")
 println("=" ^ 60)
 
-# Expansion coefficients c (already in 1/fs² units from QFiND)
-c_coeffs = cheb.coeffs
+# Expansion coefficients c (already in appropriate units)
+c_coeffs = pswfft.coeffs
 
-# Derivative matrix D (scaled to 1/fs)
-D_matrix = chebyshev_derivative_matrix(cheb)
+# Derivative matrix D for PSWF basis
+D_matrix = compute_time_derivative_matrix(pswfft)
 
 println("\nExpansion coefficients c (first 5 terms):")
 for k in 1:min(5, n_terms)
@@ -89,12 +99,11 @@ display(D_matrix[1:min(5, n_terms), 1:min(5, n_terms)])
 
 # Verify BCF reconstruction
 bcf_exact = BosonicBCF(sd, T; ub=6000.0)
-bcf_cheb = chebyshev_bcf(cheb)
 
-t_test = range(0.01, 200.0, length=100)
+t_test = range(0.01, T_pswf, length=500)
 C_exact = [bcf_exact(t) for t in t_test]
-C_cheb = [bcf_cheb(t) for t in t_test]
-recon_error = norm(C_cheb .- C_exact) / norm(C_exact)
+C_pswf = [pswfft(t) for t in t_test]
+recon_error = norm(C_pswf .- C_exact) / norm(C_exact)
 
 println("\nBCF Reconstruction Error: $(round(recon_error * 100, digits=4))%")
 
@@ -118,20 +127,26 @@ println("  Tunneling coupling Δ = $Δ cm⁻¹")
 V = ComplexF64[1 0; 0 -1]
 
 # Create Noise structure
-# For HSEOM with Chebyshev: expon is not used directly, D matrix handles time evolution
-# We use placeholder exponentials and the actual Chebyshev coefficients
+# For HSEOM with PSWF: expon is not used directly, D matrix handles time evolution
 expon = zeros(ComplexF64, n_terms)  # Placeholder (D matrix will be used instead)
-coeff = c_coeffs  # Chebyshev expansion coefficients
+coeff = c_coeffs  # PSWF expansion coefficients
 
-bath = Bath(expon, coeff, V; add_conjugate=false)  # No conjugate for Chebyshev
+bath = Bath(expon, coeff, V; add_conjugate=false)  # No conjugate for PSWF
 noise = Noise(bath)
 
-# φₖ(0) for Bessel expansion: Jₖ(0) = δₖ₀ (1 for k=0, 0 otherwise)
+# φₖ(0) for PSWF expansion: evaluate basis functions at t=0
 phi0 = zeros(ComplexF64, n_terms)
-phi0[1] = 1.0  # J₀(0) = 1
+for k in 1:n_terms
+    phi0[k] = pswfft.basis[k](0.0)
+end
+
+println("\nPSWF basis at t=0 (first 5 terms):")
+for k in 1:min(5, n_terms)
+    println("  φ[$k](0) = $(phi0[k])")
+end
 
 # HSEOM system with D matrix
-ndepth = 4  # Keep small to avoid memory issues
+ndepth = 10  # Keep small to avoid memory issues
 system = HSEOMSystem(H, noise, D_matrix, ndepth; phi0=phi0, hierarchy=:depth)
 
 println("\nHSEOM System:")
@@ -150,10 +165,6 @@ println("=" ^ 60)
 # Initial condition: |1⟩ (localized on state 1)
 Pb0 = initial_adw(system, 1)  # bra side
 Pk0 = initial_adw(system, 1)  # ket side
-
-# Time evolution parameters
-t_end = 200.0    # [fs]
-dt = 0.5         # [fs] (smaller for stability)
 
 println("\nTime Evolution Parameters:")
 println("  Initial state: |1⟩")
@@ -183,46 +194,59 @@ fig1 = Figure(size=(800, 500))
 ax1 = Axis(fig1[1, 1],
     xlabel = "Time [fs]",
     ylabel = "Population",
-    title = "HSEOM: Two-Level System with Ohmic Bath\n(λ=$λ cm⁻¹, γc=$γc cm⁻¹, T=$T K, $n_terms Chebyshev terms)"
+    title = "HSEOM (PSWF): Two-Level System with Ohmic Bath\n(λ=$λ cm⁻¹, γc=$γc cm⁻¹, T=$T K, $n_terms PSWF terms)"
 )
 lines!(ax1, times, pops[1, :], linewidth=2, label="p₁", color=:blue)
 lines!(ax1, times, pops[2, :], linewidth=2, label="p₂", color=:red)
 lines!(ax1, times, pops[1, :] .+ pops[2, :], linewidth=1, linestyle=:dash, 
        label="Total", color=:black)
 axislegend(ax1, position=:rt)
-save(joinpath(outdir, "hseom_population_ohmic.png"), fig1)
-println("  Saved: hseom_population_ohmic.png")
+save(joinpath(outdir, "hseom_population_ohmic_pswf.png"), fig1)
+println("  Saved: hseom_population_ohmic_pswf.png")
 
-# Figure 2: BCF comparison (Exact vs Chebyshev)
+# Figure 2: BCF comparison (Exact vs PSWF)
 fig2 = Figure(size=(800, 500))
 ax2 = Axis(fig2[1, 1],
     xlabel = "Time [fs]",
     ylabel = "C(t)",
-    title = "Bath Correlation Function: Exact vs Chebyshev ($n_terms terms)\nReconstruction error: $(round(recon_error*100, digits=3))%"
+    title = "Bath Correlation Function: Exact vs PSWF ($n_terms terms)\nReconstruction error: $(round(recon_error*100, digits=3))%"
 )
 lines!(ax2, collect(t_test), real.(C_exact), linewidth=2, label="Re[C(t)] Exact", color=:blue)
-lines!(ax2, collect(t_test), real.(C_cheb), linewidth=2, linestyle=:dash, 
-       label="Re[C(t)] Chebyshev", color=:cyan)
+lines!(ax2, collect(t_test), real.(C_pswf), linewidth=2, linestyle=:dash, 
+       label="Re[C(t)] PSWF", color=:cyan)
 lines!(ax2, collect(t_test), imag.(C_exact), linewidth=2, label="Im[C(t)] Exact", color=:red)
-lines!(ax2, collect(t_test), imag.(C_cheb), linewidth=2, linestyle=:dash, 
-       label="Im[C(t)] Chebyshev", color=:orange)
+lines!(ax2, collect(t_test), imag.(C_pswf), linewidth=2, linestyle=:dash, 
+       label="Im[C(t)] PSWF", color=:orange)
 axislegend(ax2, position=:rt)
-save(joinpath(outdir, "hseom_bcf_chebyshev.png"), fig2)
-println("  Saved: hseom_bcf_chebyshev.png")
+save(joinpath(outdir, "hseom_bcf_pswf.png"), fig2)
+println("  Saved: hseom_bcf_pswf.png")
 
 # Figure 3: D matrix visualization
 fig3 = Figure(size=(600, 500))
 ax3 = Axis(fig3[1, 1],
     xlabel = "Column index",
     ylabel = "Row index",
-    title = "Derivative Matrix D (absolute values)",
+    title = "PSWF Derivative Matrix D (absolute values)",
     yreversed = true
 )
 hm = heatmap!(ax3, abs.(D_matrix), colormap=:viridis)
 Colorbar(fig3[1, 2], hm, label="|Dₖₗ|")
-save(joinpath(outdir, "hseom_D_matrix.png"), fig3)
-println("  Saved: hseom_D_matrix.png")
+save(joinpath(outdir, "hseom_D_matrix_pswf.png"), fig3)
+println("  Saved: hseom_D_matrix_pswf.png")
+
+# Figure 4: PSWF basis functions at t=0
+fig4 = Figure(size=(600, 400))
+ax4 = Axis(fig4[1, 1],
+    xlabel = "Index k",
+    ylabel = "φₖ(0)",
+    title = "PSWF Basis Functions at t=0"
+)
+barplot!(ax4, 1:n_terms, real.(phi0), color=:blue, label="Real")
+barplot!(ax4, 1:n_terms, imag.(phi0), color=:red, label="Imag", dodge=2)
+axislegend(ax4)
+save(joinpath(outdir, "hseom_phi0_pswf.png"), fig4)
+println("  Saved: hseom_phi0_pswf.png")
 
 println("\n" * "=" ^ 60)
-println("HSEOM Example completed!")
+println("HSEOM (PSWF) Example completed!")
 println("=" ^ 60)
