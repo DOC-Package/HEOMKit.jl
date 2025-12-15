@@ -20,14 +20,19 @@ export build_hseom_index_maps
 # matrix.jl: Liouville space operators
 export σx, σy, σz, σI, σp, σm
 export matx, mato, matl, matr
-export HEOMMatrices
+export matx_sparse, mato_sparse, matl_sparse, matr_sparse
+export matx_dense, mato_dense, matl_dense, matr_dense
+export AbstractHEOMMatrices, HEOMMatrices
+export SparseHEOMMatrices, DenseHEOMMatrices
 
 # heom.jl: HEOM structures and Liouville operator
 export HEOMOperators, HEOMSystem
+export SparseHEOMSystem, DenseHEOMSystem
 export liouville!, liouville
 
 # hseom.jl: HSEOM structures and Liouville operators (wavefunction-based)
 export HSEOMOperators, HSEOMSystem
+export SparseHSEOMSystem, DenseHSEOMSystem
 export liouville_ket!, liouville_ket
 export liouville_bra!, liouville_bra
 export initial_adw

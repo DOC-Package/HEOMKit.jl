@@ -57,7 +57,7 @@ println("  Temperature T = $T K")
 n_terms = 12     # Number of PSWF terms
 T_pswf = 700.0  # Time duration parameter [fs]
 # Time evolution parameters
-t_end = 700.0    # [fs]
+t_end = 10.0    # [fs]
 dt = 0.25         # [fs]
 
 println("\nPSWF Expansion Parameters:")

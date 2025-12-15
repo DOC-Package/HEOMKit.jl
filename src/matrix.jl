@@ -2,6 +2,7 @@
     Matrix module for HEOM
 
 Define operators in Liouville space.
+Supports both sparse and dense matrix representations.
 """
 
 using SparseArrays
@@ -19,83 +20,172 @@ const σm = ComplexF64[0 0; 1 0]   # σ⁻ (lowering operator)
 
 
 # =====================================
+# Type aliases
+# =====================================
+
+const SparseMat = SparseMatrixCSC{ComplexF64, Int}
+const DenseMat = Matrix{ComplexF64}
+
+
+# =====================================
 # Liouville space operators (sparse matrix version)
 # =====================================
 
-# Type alias for sparse matrices
-const SparseMat = SparseMatrixCSC{ComplexF64, Int}
-
-"""    kron_id_left(A) → A ⊗ I (sparse)"""
-function kron_id_left(A::AbstractMatrix)
+"""    kron_id_left_sparse(A) → A ⊗ I (sparse)"""
+function kron_id_left_sparse(A::AbstractMatrix)
     n = size(A, 1)
     return kron(sparse(ComplexF64.(A)), sparse(one(ComplexF64) * I, n, n))
 end
 
-"""    kron_id_right(A) → I ⊗ A (sparse)"""
-function kron_id_right(A::AbstractMatrix)
+"""    kron_id_right_sparse(A) → I ⊗ A (sparse)"""
+function kron_id_right_sparse(A::AbstractMatrix)
     n = size(A, 1)
     return kron(sparse(one(ComplexF64) * I, n, n), sparse(ComplexF64.(A)))
 end
 
+"""    matx_sparse(A) → [A, ρ] in Liouville space (sparse)"""
+matx_sparse(A::AbstractMatrix)::SparseMat = kron_id_left_sparse(A) - kron_id_right_sparse(transpose(A))
+
+"""    mato_sparse(A) → {A, ρ} in Liouville space (sparse)"""
+mato_sparse(A::AbstractMatrix)::SparseMat = kron_id_left_sparse(A) + kron_id_right_sparse(transpose(A))
+
+"""    matl_sparse(A) → Aρ in Liouville space (sparse)"""
+matl_sparse(A::AbstractMatrix)::SparseMat = kron_id_left_sparse(A)
+
+"""    matr_sparse(A) → ρA† in Liouville space (sparse)"""
+matr_sparse(A::AbstractMatrix)::SparseMat = kron_id_right_sparse(conj(A))
+
+
+# =====================================
+# Liouville space operators (dense matrix version)
+# =====================================
+
+"""    kron_id_left_dense(A) → A ⊗ I (dense)"""
+function kron_id_left_dense(A::AbstractMatrix)
+    n = size(A, 1)
+    return kron(Matrix{ComplexF64}(A), Matrix{ComplexF64}(I, n, n))
+end
+
+"""    kron_id_right_dense(A) → I ⊗ A (dense)"""
+function kron_id_right_dense(A::AbstractMatrix)
+    n = size(A, 1)
+    return kron(Matrix{ComplexF64}(I, n, n), Matrix{ComplexF64}(A))
+end
+
+"""    matx_dense(A) → [A, ρ] in Liouville space (dense)"""
+matx_dense(A::AbstractMatrix)::DenseMat = kron_id_left_dense(A) - kron_id_right_dense(transpose(A))
+
+"""    mato_dense(A) → {A, ρ} in Liouville space (dense)"""
+mato_dense(A::AbstractMatrix)::DenseMat = kron_id_left_dense(A) + kron_id_right_dense(transpose(A))
+
+"""    matl_dense(A) → Aρ in Liouville space (dense)"""
+matl_dense(A::AbstractMatrix)::DenseMat = kron_id_left_dense(A)
+
+"""    matr_dense(A) → ρA† in Liouville space (dense)"""
+matr_dense(A::AbstractMatrix)::DenseMat = kron_id_right_dense(conj(A))
+
+
+# =====================================
+# Generic interface (default: sparse)
+# =====================================
+
+# Legacy compatibility aliases (use sparse by default)
+kron_id_left(A::AbstractMatrix) = kron_id_left_sparse(A)
+kron_id_right(A::AbstractMatrix) = kron_id_right_sparse(A)
+
 """    matx(A) → [A, ρ] in Liouville space"""
-matx(A::AbstractMatrix)::SparseMat = kron_id_left(A) - kron_id_right(transpose(A))
+matx(A::AbstractMatrix)::SparseMat = matx_sparse(A)
 
 """    mato(A) → {A, ρ} in Liouville space"""
-mato(A::AbstractMatrix)::SparseMat = kron_id_left(A) + kron_id_right(transpose(A))
+mato(A::AbstractMatrix)::SparseMat = mato_sparse(A)
 
 """    matl(A) → Aρ in Liouville space"""
-matl(A::AbstractMatrix)::SparseMat = kron_id_left(A)
+matl(A::AbstractMatrix)::SparseMat = matl_sparse(A)
 
 """    matr(A) → ρA† in Liouville space"""
-matr(A::AbstractMatrix)::SparseMat = kron_id_right(conj(A))
+matr(A::AbstractMatrix)::SparseMat = matr_sparse(A)
 
 
 # =====================================
-# HEOM matrices structure
+# HEOM matrices structure (abstract type)
 # =====================================
 
 """
-    HEOMMatrices
+    AbstractHEOMMatrices
+
+Abstract type for HEOM Liouville space matrices.
+"""
+abstract type AbstractHEOMMatrices end
+
+"""
+    HEOMMatrices{M<:AbstractMatrix{ComplexF64}}
 
 Liouville space matrices for HEOM: `Ls`, `Vx`, `Vo`, `Vl`, `Vr`, `ndim`, `ndim2`.
+Parametric type M can be SparseMat or DenseMat.
 """
-struct HEOMMatrices
-    Ls::SparseMat
-    Vx::Vector{SparseMat}
-    Vo::Vector{SparseMat}
-    Vl::Vector{SparseMat}
-    Vr::Vector{SparseMat}
+struct HEOMMatrices{M<:AbstractMatrix{ComplexF64}} <: AbstractHEOMMatrices
+    Ls::M
+    Vx::Vector{M}
+    Vo::Vector{M}
+    Vl::Vector{M}
+    Vr::Vector{M}
     ndim::Int
     ndim2::Int
 end
 
-"""    HEOMMatrices(H, noise)
+# Type aliases for convenience
+const SparseHEOMMatrices = HEOMMatrices{SparseMat}
+const DenseHEOMMatrices = HEOMMatrices{DenseMat}
+
+"""    HEOMMatrices(H, noise; sparse=true)
 
 Construct HEOM matrices from Hamiltonian and Noise.
+
+# Arguments
+- `H`: System Hamiltonian
+- `noise`: Noise structure
+- `sparse`: If true (default), use sparse matrices. If false, use dense matrices.
 """
-function HEOMMatrices(H::AbstractMatrix, noise::Noise)
+function HEOMMatrices(H::AbstractMatrix, noise::Noise; sparse::Bool=true)
     ndim = size(H, 1)
     ndim2 = ndim^2
-    
-    # システム Liouvillian（疎行列）
-    Ls = -1.0im * matx(ComplexF64.(H))
-    
-    # 各熱浴の Liouville 演算子（疎行列）
     nbath = noise.nbath
-    Vx = Vector{SparseMat}(undef, nbath)
-    Vo = Vector{SparseMat}(undef, nbath)
-    Vl = Vector{SparseMat}(undef, nbath)
-    Vr = Vector{SparseMat}(undef, nbath)
     
-    for ibath in 1:nbath
-        V = noise.V[ibath]
-        Vx[ibath] = matx(V)
-        Vo[ibath] = mato(V)
-        Vl[ibath] = matl(V)
-        Vr[ibath] = matr(V)
+    if sparse
+        # 疎行列版
+        Ls = -1.0im * matx_sparse(ComplexF64.(H))
+        Vx = Vector{SparseMat}(undef, nbath)
+        Vo = Vector{SparseMat}(undef, nbath)
+        Vl = Vector{SparseMat}(undef, nbath)
+        Vr = Vector{SparseMat}(undef, nbath)
+        
+        for ibath in 1:nbath
+            V = noise.V[ibath]
+            Vx[ibath] = matx_sparse(V)
+            Vo[ibath] = mato_sparse(V)
+            Vl[ibath] = matl_sparse(V)
+            Vr[ibath] = matr_sparse(V)
+        end
+        
+        return HEOMMatrices{SparseMat}(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
+    else
+        # 密行列版
+        Ls = -1.0im * matx_dense(ComplexF64.(H))
+        Vx = Vector{DenseMat}(undef, nbath)
+        Vo = Vector{DenseMat}(undef, nbath)
+        Vl = Vector{DenseMat}(undef, nbath)
+        Vr = Vector{DenseMat}(undef, nbath)
+        
+        for ibath in 1:nbath
+            V = noise.V[ibath]
+            Vx[ibath] = matx_dense(V)
+            Vo[ibath] = mato_dense(V)
+            Vl[ibath] = matl_dense(V)
+            Vr[ibath] = matr_dense(V)
+        end
+        
+        return HEOMMatrices{DenseMat}(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
     end
-    
-    return HEOMMatrices(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
 end
 
 
@@ -103,12 +193,23 @@ end
 # 表示用
 # =====================================
 
-function Base.show(io::IO, m::HEOMMatrices)
-    print(io, "HEOMMatrices(ndim=$(m.ndim), nbath=$(length(m.Vx)))")
+function Base.show(io::IO, m::HEOMMatrices{SparseMat})
+    print(io, "HEOMMatrices{Sparse}(ndim=$(m.ndim), nbath=$(length(m.Vx)))")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", m::HEOMMatrices)
-    println(io, "HEOMMatrices:")
+function Base.show(io::IO, m::HEOMMatrices{DenseMat})
+    print(io, "HEOMMatrices{Dense}(ndim=$(m.ndim), nbath=$(length(m.Vx)))")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", m::HEOMMatrices{SparseMat})
+    println(io, "HEOMMatrices (Sparse):")
+    println(io, "  System dimension ndim = $(m.ndim)")
+    println(io, "  Liouville dimension ndim² = $(m.ndim2)")
+    println(io, "  Number of baths = $(length(m.Vx))")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", m::HEOMMatrices{DenseMat})
+    println(io, "HEOMMatrices (Dense):")
     println(io, "  System dimension ndim = $(m.ndim)")
     println(io, "  Liouville dimension ndim² = $(m.ndim2)")
     println(io, "  Number of baths = $(length(m.Vx))")

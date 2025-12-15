@@ -32,16 +32,17 @@ end
 # =====================================
 
 """
-    HSEOMSystem
+    HSEOMSystem{M}
 
 HSEOM 完全システム。2モード同時変化のインデックスを含む。
 波動関数（ADW）を扱うため、次元は ndim（ヒルベルト空間）。
+型パラメータ M は行列の型（密行列または疎行列）を決定する。
 
 # Fields
-- `H::Matrix{ComplexF64}`: システムハミルトニアン
-- `V::Vector{Matrix{ComplexF64}}`: 相互作用演算子（各熱浴）
+- `H::M`: システムハミルトニアン
+- `V::Vector{M}`: 相互作用演算子（各熱浴）
 - `noise::Noise`: ノイズパラメータ
-- `D::Matrix{ComplexF64}`: BCF 展開の D 行列（∂ₜφₖ = Σₗ Dₖₗ φₗ）
+- `D::M`: BCF 展開の D 行列（∂ₜφₖ = Σₗ Dₖₗ φₗ）
 - `phi0::Vector{ComplexF64}`: φₖ(0) の初期値（相互作用項で使用）
 - `operators::HSEOMOperators`: HSEOM 演算子
 - `adw_idx::Matrix{Int}`: 階層インデックス
@@ -53,11 +54,11 @@ HSEOM 完全システム。2モード同時変化のインデックスを含む�
 - `ndim::Int`: ヒルベルト空間次元
 - `nterms::Int`: BCF 展開項数
 """
-struct HSEOMSystem
-    H::Matrix{ComplexF64}
-    V::Vector{Matrix{ComplexF64}}
+struct HSEOMSystem{M<:AbstractMatrix{ComplexF64}}
+    H::M
+    V::Vector{M}
     noise::Noise
-    D::Matrix{ComplexF64}
+    D::M
     phi0::Vector{ComplexF64}
     operators::HSEOMOperators
     adw_idx::Matrix{Int}
@@ -70,9 +71,15 @@ struct HSEOMSystem
     nterms::Int
 end
 
+# Type aliases for convenience
+const SparseMat = SparseMatrixCSC{ComplexF64, Int}
+const DenseMat = Matrix{ComplexF64}
+const SparseHSEOMSystem = HSEOMSystem{SparseMat}
+const DenseHSEOMSystem = HSEOMSystem{DenseMat}
+
 """
     HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, ndepth::Int;
-                hierarchy::Symbol=:depth)
+                phi0=nothing, hierarchy=:depth, sparse=false)
 
 HSEOM システムを構築する。
 
@@ -81,8 +88,9 @@ HSEOM システムを構築する。
 - `noise::Noise`: ノイズパラメータ
 - `D::AbstractMatrix`: BCF 展開の D 行列（∂ₜφₖ = Σₗ Dₖₗ φₗ）
 - `ndepth::Int`: 階層の深さ
-- `phi0::AbstractVector`: φₖ(0) の初期値（省略時はすべて 1.0）
+- `phi0::AbstractVector`: φₖ(0) の初期値（省略時は Bessel展開用のデフォルト）
 - `hierarchy::Symbol`: 階層構築方法 (:depth または :width)
+- `sparse::Bool`: true なら疎行列、false（デフォルト）なら密行列を使用
 
 # Example
 ```julia
@@ -94,18 +102,25 @@ D = build_tridiagonal_D(nterms, gamma_c)
 phi0 = ones(nterms)  # Bessel展開では φₖ(0) = Jₖ(0) = δₖ₀
 phi0[1] = 1.0
 phi0[2:end] .= 0.0
-system = HSEOMSystem(H, noise, D, 5; phi0=phi0)
+system = HSEOMSystem(H, noise, D, 5; phi0=phi0, sparse=true)
 ```
 """
 function HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, ndepth::Int;
                      phi0::Union{AbstractVector, Nothing}=nothing,
-                     hierarchy::Symbol=:depth)
+                     hierarchy::Symbol=:depth,
+                     sparse::Bool=false)
     ndim = size(H, 1)
-    H_complex = Matrix{ComplexF64}(H)
-    D_complex = Matrix{ComplexF64}(D)
     
-    # 相互作用演算子を取得
-    V = [Matrix{ComplexF64}(noise.V[ibath]) for ibath in 1:noise.nbath]
+    # 行列を疎または密として構築
+    if sparse
+        H_mat = SparseMatrixCSC{ComplexF64, Int}(H)
+        D_mat = SparseMatrixCSC{ComplexF64, Int}(D)
+        V = [SparseMatrixCSC{ComplexF64, Int}(noise.V[ibath]) for ibath in 1:noise.nbath]
+    else
+        H_mat = Matrix{ComplexF64}(H)
+        D_mat = Matrix{ComplexF64}(D)
+        V = [Matrix{ComplexF64}(noise.V[ibath]) for ibath in 1:noise.nbath]
+    end
     
     # 階層インデックスを構築
     nterms = noise.nterms
@@ -140,7 +155,7 @@ function HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, ndepth:
     operators = HSEOMOperators(adw_idx)
     
     return HSEOMSystem(
-        H_complex, V, noise, D_complex, phi0_vec, operators, adw_idx, idx_plus, idx_minus,
+        H_mat, V, noise, D_mat, phi0_vec, operators, adw_idx, idx_plus, idx_minus,
         hseom_idx.idx_minus_plus,
         hseom_idx.idx_plus_minus,
         nadw, ndim, nterms

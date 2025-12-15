@@ -77,15 +77,16 @@ end
 # =====================================
 
 """
-    HEOMSystem
+    HEOMSystem{M}
 
 Complete HEOM system with all required data for time evolution.
+Type parameter M determines the matrix type (SparseMat or DenseMat).
 
 Fields: `noise`, `matrices`, `operators`, `ado_idx`, `idx_plus`, `idx_minus`, `nado`, `ndim`, `ndim2`
 """
-struct HEOMSystem
+struct HEOMSystem{M<:AbstractMatrix{ComplexF64}}
     noise::Noise
-    matrices::HEOMMatrices
+    matrices::HEOMMatrices{M}
     operators::HEOMOperators
     ado_idx::Matrix{Int}
     idx_plus::Matrix{Int}
@@ -95,14 +96,25 @@ struct HEOMSystem
     ndim2::Int
 end
 
-"""    HEOMSystem(H, noise, ndepth; hierarchy=:depth)
+# Type aliases for convenience
+const SparseHEOMSystem = HEOMSystem{SparseMatrixCSC{ComplexF64, Int}}
+const DenseHEOMSystem = HEOMSystem{Matrix{ComplexF64}}
 
-Construct HEOM system. `hierarchy` can be `:depth` or `:width`.
+"""    HEOMSystem(H, noise, ndepth; hierarchy=:depth, sparse=true)
+
+Construct HEOM system. 
+
+# Arguments
+- `H`: System Hamiltonian
+- `noise`: Noise structure
+- `ndepth`: Hierarchy depth
+- `hierarchy`: Hierarchy construction method, `:depth` or `:width`
+- `sparse`: If true (default), use sparse matrices. If false, use dense matrices.
 """
 function HEOMSystem(H::AbstractMatrix, noise::Noise, ndepth::Int;
-                    hierarchy::Symbol=:depth)
+                    hierarchy::Symbol=:depth, sparse::Bool=true)
     # 行列を構築
-    matrices = HEOMMatrices(H, noise)
+    matrices = HEOMMatrices(H, noise; sparse=sparse)
     
     # 階層インデックスを構築
     nterms = noise.nterms
