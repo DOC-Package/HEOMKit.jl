@@ -8,7 +8,7 @@ using CairoMakie
 # Spectral density parameters
 s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γ = 50.0      # Cutoff frequency [cm⁻¹]
-λ = 10.0       # Reorganization energy [cm⁻¹]
+λ = 5.0       # Reorganization energy [cm⁻¹]
 T = 300.0      # Temperature [K]
 sd = PowerLawExpSD(s, γ; reorgene=λ)
 bcf = BosonicBCF(sd, T)

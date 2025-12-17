@@ -152,7 +152,7 @@ function HEOMMatrices(H::AbstractMatrix, noise::Noise; sparse::Bool=true)
     nbath = noise.nbath
     
     if sparse
-        # 疎行列版
+        # Sparse matrix version
         Ls = -1.0im * matx_sparse(ComplexF64.(H))
         Vx = Vector{SparseMat}(undef, nbath)
         Vo = Vector{SparseMat}(undef, nbath)
@@ -169,7 +169,7 @@ function HEOMMatrices(H::AbstractMatrix, noise::Noise; sparse::Bool=true)
         
         return HEOMMatrices{SparseMat}(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
     else
-        # 密行列版
+        # Dense matrix version
         Ls = -1.0im * matx_dense(ComplexF64.(H))
         Vx = Vector{DenseMat}(undef, nbath)
         Vo = Vector{DenseMat}(undef, nbath)
@@ -190,7 +190,7 @@ end
 
 
 # =====================================
-# 表示用
+# Display functions
 # =====================================
 
 function Base.show(io::IO, m::HEOMMatrices{SparseMat})

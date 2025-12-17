@@ -1,8 +1,4 @@
 """
-    Noise module for HEOM
-"""
-
-"""
     Bath
 
 Single bath with exponential expansion of correlation function C(t) = Σₖ cₖ exp(-γₖt).
@@ -15,9 +11,6 @@ struct Bath
     nterms::Int
     V::Matrix{ComplexF64}
 end
-
-# Note: Bath(sd::SpectralDensity, ...) constructor is available when QFiND is loaded
-# See the package extension or use the direct constructor with gamk/ck vectors.
 
 """    Bath(expon, coeff, V; add_conjugate=true)
 
@@ -35,11 +28,6 @@ function Bath(expon::Vector, coeff::Vector, V::AbstractMatrix;
     nterms = length(expon_full)
     return Bath(expon_full, coeff_full, nterms, ComplexF64.(V))
 end
-
-
-# =====================================
-# Noise structure (unified multiple baths)
-# =====================================
 
 """
     Noise
@@ -67,14 +55,14 @@ Construct Noise from multiple Bath objects.
 function Noise(baths::Vector{Bath})
     nbath = length(baths)
     
-    # 各熱浴のパラメータサイズと開始位置
+    # Parameter sizes and start positions for each bath
     nterms_bath = [b.nterms for b in baths]
     jstart_bath = ones(Int, nbath)
     for i in 2:nbath
         jstart_bath[i] = jstart_bath[i-1] + nterms_bath[i-1]
     end
     
-    # 統合配列
+    # Unified arrays
     nterms = sum(nterms_bath)
     expon = Vector{ComplexF64}(undef, nterms)
     coeff = Vector{ComplexF64}(undef, nterms)
@@ -92,43 +80,9 @@ function Noise(baths::Vector{Bath})
     return Noise(expon, coeff, abs_coeff, nterms, nbath, nterms_bath, jstart_bath, V, baths)
 end
 
-"""    Noise(bath::Bath)
-
-Construct Noise from a single Bath.
-"""
 function Noise(bath::Bath)
     return Noise([bath])
 end
-
-
-# =====================================
-# Convenience constructors
-# =====================================
-
-"""    drude_bath(λ, γ, T, V; degree=10)
-
-Create bath with Drude-Lorentz spectral density J(ω) = 2λγω/(ω² + γ²).
-"""
-function drude_bath(λ::Real, γ::Real, temperature::Real, V::AbstractMatrix;
-                    degree::Int=10, integrator::Symbol=:pade)
-    sd = DrudeLorentz(λ=λ, γ=γ)
-    return Bath(sd, temperature, V; degree=degree, integrator=integrator)
-end
-
-"""    brownian_bath(λ, γ, Ω, T, V; degree=10)
-
-Create bath with Brownian spectral density J(ω) = 4λγΩ²ω/((ω² - Ω²)² + 4γ²ω²).
-"""
-function brownian_bath(λ::Real, γ::Real, Ω::Real, temperature::Real, V::AbstractMatrix;
-                       degree::Int=10, integrator::Symbol=:pade)
-    sd = Brownian(λ=λ, γ=γ, Ω=Ω)
-    return Bath(sd, temperature, V; degree=degree, integrator=integrator)
-end
-
-
-# =====================================
-# Derived parameter computation (for HEOM)
-# =====================================
 
 """    compute_heom_params(noise) → (bk, ak, cb)
 
@@ -142,7 +96,7 @@ function compute_heom_params(noise::Noise)
     
     cb = [abs(noise.coeff[j]) / bk[j] for j in 1:nterms]
     
-    # 正規化
+    # Normalization
     max_cb = maximum(cb)
     if max_cb > 1.0
         bk .*= max_cb
@@ -154,7 +108,7 @@ end
 
 
 # =====================================
-# 表示用
+# Display functions
 # =====================================
 
 function Base.show(io::IO, bath::Bath)

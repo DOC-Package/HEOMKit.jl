@@ -206,57 +206,57 @@ end
 """
     build_hseom_index_maps(ado_idx::Matrix{Int}, nado::Int, nmode::Int)
 
-HSEOM用の一般的な2モード同時変化インデックスマップを構築（全ての k,ℓ ペア）。
+Construct general two-mode simultaneous change index maps for HSEOM (all k, ℓ pairs).
 
-BCF展開: C(t) = Σₖ cₖ φₖ(t), ∂ₜφₖ = Σₗ Dₖₗ φₗ(t)
+BCF expansion: C(t) = Σₖ cₖ φₖ(t), ∂ₜφₖ = Σₗ Dₖₗ φₗ(t)
 
-一般の D 行列（非三重対角を含む）に対応。
-辞書を使用してO(1)の高速アクセスを実現。
+Supports general D matrices (including non-tridiagonal).
+Uses dictionary for O(1) fast access.
 
 # Arguments
-- `ado_idx::Matrix{Int}`: 階層インデックス (nmode × nado)
-- `nado::Int`: ADO/ADW の総数
-- `nmode::Int`: モード数
+- `ado_idx::Matrix{Int}`: Hierarchy indices (nmode × nado)
+- `nado::Int`: Total number of ADOs/ADWs
+- `nmode::Int`: Number of modes
 
 # Returns
-NamedTupleで以下を返す:
-- `idx_minus_plus::Array{Int,3}`: (k, ℓ, n) → n[k]-1, n[ℓ]+1 の接続先インデックス
-- `idx_plus_minus::Array{Int,3}`: (k, ℓ, n) → n[k]+1, n[ℓ]-1 の接続先インデックス
+NamedTuple with:
+- `idx_minus_plus::Array{Int,3}`: (k, ℓ, n) → connection index for n[k]-1, n[ℓ]+1
+- `idx_plus_minus::Array{Int,3}`: (k, ℓ, n) → connection index for n[k]+1, n[ℓ]-1
 
-各配列のサイズは (nmode × nmode × nado)。
-k == ℓ の対角成分は -1（単一モード変化は既存の idx_minus, idx_plus で対応）。
-接続先が存在しない場合も -1。
+Array size is (nmode × nmode × nado).
+Diagonal entries (k == ℓ) are -1 (single-mode changes use existing idx_minus, idx_plus).
+Non-existent connections are also -1.
 
 # Example
 ```julia
 nado, ado_idx, idx_plus, idx_minus = hierarchy_index_depth(3, 4)
 hseom_idx = build_hseom_index_maps(ado_idx, nado, 3)
-# ADO n=5 でモード k=2, ℓ=1 の場合
+# For ADO n=5 with modes k=2, ℓ=1
 n_mp = hseom_idx.idx_minus_plus[2, 1, 5]  # n₂-1, n₁+1
 n_pm = hseom_idx.idx_plus_minus[2, 1, 5]  # n₂+1, n₁-1
 ```
 """
 function build_hseom_index_maps(ado_idx::Matrix{Int}, nado::Int, nmode::Int)
-    # ADOインデックスベクトル → ADO番号 の辞書
+    # Dictionary: ADO index vector → ADO number
     idx_to_ado = Dict{Vector{Int}, Int}()
     for n in 1:nado
         idx_to_ado[ado_idx[:, n]] = n
     end
     
-    # 結果の3次元配列を初期化
-    # idx_minus_plus[k, ℓ, n]: n[k]-1, n[ℓ]+1 への接続
-    # idx_plus_minus[k, ℓ, n]: n[k]+1, n[ℓ]-1 への接続
+    # Initialize result 3D arrays
+    # idx_minus_plus[k, ℓ, n]: connection to n[k]-1, n[ℓ]+1
+    # idx_plus_minus[k, ℓ, n]: connection to n[k]+1, n[ℓ]-1
     idx_minus_plus = fill(-1, nmode, nmode, nado)
     idx_plus_minus = fill(-1, nmode, nmode, nado)
     
-    # 各ADOについて全ての (k, ℓ) ペアを計算
+    # Compute all (k, ℓ) pairs for each ADO
     for n in 1:nado
         idx = copy(ado_idx[:, n])
         
         for k in 1:nmode
             for ℓ in 1:nmode
                 if k == ℓ
-                    continue  # 対角成分は単一モード変化（既存の idx_minus, idx_plus で対応）
+                    continue  # Diagonal entries are single-mode changes (handled by existing idx_minus, idx_plus)
                 end
                 
                 # idx_minus_plus: n[k] - 1, n[ℓ] + 1

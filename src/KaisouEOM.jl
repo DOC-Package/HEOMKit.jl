@@ -35,6 +35,8 @@ export HSEOMOperators, HSEOMSystem
 export SparseHSEOMSystem, DenseHSEOMSystem
 export liouville_ket!, liouville_ket
 export liouville_bra!, liouville_bra
+export liouville_ket_normalized!, liouville_ket_normalized
+export liouville_bra_normalized!, liouville_bra_normalized
 export initial_adw
 export build_tridiagonal_D
 

@@ -1,7 +1,7 @@
 """    lsrk4!(P, dt, liouvillian!, system; parallel=false)
 
 One step of low-storage RK4 (in-place).
-Liouville 演算子は `liouvillian!(dP, P, system; parallel)` の形式。
+The Liouville operator has the form `liouvillian!(dP, P, system; parallel)`.
 
 # Arguments
 - `parallel::Bool`: If true, use multi-threading in liouvillian.
@@ -41,21 +41,23 @@ end
 
 """    evolve(system::HSEOMSystem, Pb0, Pk0, tspan, dt; ...) → (times, populations)
 
-HSEOM の時間発展（bra/ket 同時発展）。
+HSEOM time evolution (bra/ket simultaneous evolution).
 
-占有率は p_i = Σₙ Pk[i,n] * conj(Pb[i,n]) で計算（全ADWの寄与を合計）。
+Populations are calculated as p_i = Σₙ Pk[i,n] * conj(Pb[i,n]) (sum over all ADWs).
 
 # Arguments
-- `system::HSEOMSystem`: HSEOM システム
-- `Pb0::Matrix{ComplexF64}`: 初期 bra 側 ADW (ndim × nadw)
-- `Pk0::Matrix{ComplexF64}`: 初期 ket 側 ADW (ndim × nadw)
-- `tspan::Tuple{Real,Real}`: 時間範囲 (t_start, t_end)
-- `dt::Real`: 時間刻み
+- `system::HSEOMSystem`: HSEOM system
+- `Pb0::Matrix{ComplexF64}`: Initial bra-side ADW (ndim × nadw)
+- `Pk0::Matrix{ComplexF64}`: Initial ket-side ADW (ndim × nadw)
+- `tspan::Tuple{Real,Real}`: Time range (t_start, t_end)
+- `dt::Real`: Time step
 - `parallel::Bool`: If true, use multi-threading for ADW loop (default: false)
+- `normalized::Bool`: If true, use normalized HSEOM (√n coefficients) (default: false)
 """
 function evolve(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{ComplexF64},
                 tspan::Tuple{Real,Real}, dt::Real;
                 parallel::Bool=false,
+                normalized::Bool=false,
                 callback=nothing,
                 savefile::Union{String,Nothing}=nothing, save_interval::Int=100)
     t_start, t_end = tspan
@@ -73,7 +75,7 @@ function evolve(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{Comple
         for i in 1:ndim
             print(io, "\tpop_$i")
         end
-        println(io, "\ttotal\tnorm_bra\tnorm_ket")
+        println(io, "\ttotal\tnorm_ket\tnorm_bra\tmax_abs_ket\tmax_abs_bra")
     end
     
     # Initial state
@@ -91,21 +93,27 @@ function evolve(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{Comple
         total_pop = sum(populations[:, 1])
         norm_bra = sqrt(real(sum(abs2.(Pb))))
         norm_ket = sqrt(real(sum(abs2.(Pk))))
+        max_abs_ket = maximum(abs.(Pk))
+        max_abs_bra = maximum(abs.(Pb))
         print(io, t)
         for i in 1:ndim
             print(io, "\t", populations[i, 1])
         end
-        println(io, "\t", total_pop, "\t", norm_bra, "\t", norm_ket)
+        println(io, "\t", total_pop, "\t", norm_ket, "\t", norm_bra, "\t", max_abs_ket, "\t", max_abs_bra)
     end
     
     if callback !== nothing
         callback(t, Pb, Pk)
     end
     
+    # Select Liouvillian functions
+    ket_liouvillian! = normalized ? liouville_ket_normalized! : liouville_ket!
+    bra_liouvillian! = normalized ? liouville_bra_normalized! : liouville_bra!
+    
     # Time evolution loop
     for step in 1:nsteps
-        lsrk4!(Pb, dt, liouville_bra!, system; parallel=parallel)
-        lsrk4!(Pk, dt, liouville_ket!, system; parallel=parallel)
+        lsrk4!(Pb, dt, bra_liouvillian!, system; parallel=parallel)
+        lsrk4!(Pk, dt, ket_liouvillian!, system; parallel=parallel)
         t += dt
         times[step + 1] = t
         
@@ -119,11 +127,13 @@ function evolve(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{Comple
             total_pop = sum(populations[:, step + 1])
             norm_bra = sqrt(real(sum(abs2.(Pb))))
             norm_ket = sqrt(real(sum(abs2.(Pk))))
+            max_abs_ket = maximum(abs.(Pk))
+            max_abs_bra = maximum(abs.(Pb))
             print(io, t)
             for i in 1:ndim
                 print(io, "\t", populations[i, step + 1])
             end
-            println(io, "\t", total_pop, "\t", norm_bra, "\t", norm_ket)
+            println(io, "\t", total_pop, "\t", norm_ket, "\t", norm_bra, "\t", max_abs_ket, "\t", max_abs_bra)
             flush(io)
         end
         

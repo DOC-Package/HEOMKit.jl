@@ -132,7 +132,7 @@ phi0[1] = 1.0  # J₀(0) = 1
 
 # HSEOM system with D matrix
 ndepth = 4  # Keep small to avoid memory issues
-system = HSEOMSystem(H, noise, D_matrix, ndepth; phi0=phi0, hierarchy=:depth)
+system = HSEOMSystem(H, noise, D_matrix, phi0, ndepth; hierarchy=:depth)
 
 println("\nHSEOM System:")
 println("  Hierarchy depth: $ndepth")
@@ -162,7 +162,7 @@ println("  Time step: $dt fs")
 println("  Total steps: $(Int(t_end/dt))")
 
 println("\nRunning dynamics...")
-@time times, pops = evolve(system, Pb0, Pk0, (0.0, t_end), dt)
+@time times, pops = evolve(system, Pb0, Pk0, (0.0, t_end), dt; savefile="pop_cheb.dat", save_interval=10, parallel=true)
 
 println("\nResults:")
 println("  Initial population: p₁=$(round(pops[1,1], digits=4)), p₂=$(round(pops[2,1], digits=4))")

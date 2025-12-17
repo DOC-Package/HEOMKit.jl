@@ -42,7 +42,7 @@ function HEOMOperators(noise::Noise, ado_idx::Matrix{Int}, nado::Int)
         end
     end
     
-    # theta_l, theta_r: 各熱浴内で前半/後半に分ける
+    # theta_l, theta_r: separate first half / second half within each bath
     theta_l = zeros(ComplexF64, nterms, nado)
     theta_r = zeros(ComplexF64, nterms, nado)
     
@@ -53,13 +53,13 @@ function HEOMOperators(noise::Noise, ado_idx::Matrix{Int}, nado::Int)
             jmid = jstart + nterms_b ÷ 2 - 1
             jend = jstart + nterms_b - 1
             
-            # 前半（元データ）
+            # First half (original data)
             for j in jstart:jmid
                 if ado_idx[j, n] > 0 && noise.abs_coeff[j] > 0
                     theta_l[j, n] = sqrt(ado_idx[j, n] / noise.abs_coeff[j]) * noise.coeff[j]
                 end
             end
-            # 後半（複素共役データ）
+            # Second half (complex conjugate data)
             for j in (jmid + 1):jend
                 if ado_idx[j, n] > 0 && noise.abs_coeff[j] > 0
                     theta_r[j, n] = -sqrt(ado_idx[j, n] / noise.abs_coeff[j]) * noise.coeff[j]
@@ -113,10 +113,10 @@ Construct HEOM system.
 """
 function HEOMSystem(H::AbstractMatrix, noise::Noise, ndepth::Int;
                     hierarchy::Symbol=:depth, sparse::Bool=true)
-    # 行列を構築
+    # Construct matrices
     matrices = HEOMMatrices(H, noise; sparse=sparse)
     
-    # 階層インデックスを構築
+    # Construct hierarchy indices
     nterms = noise.nterms
     if hierarchy == :depth
         nado, ado_idx, idx_plus, idx_minus = hierarchy_index_depth(nterms, ndepth)
@@ -130,7 +130,7 @@ function HEOMSystem(H::AbstractMatrix, noise::Noise, ndepth::Int;
         error("Unknown method: $method. Use :depth or :width")
     end
     
-    # 演算子を構築
+    # Construct operators
     operators = HEOMOperators(noise, ado_idx, nado)
     
     return HEOMSystem(noise, matrices, operators, ado_idx, idx_plus, idx_minus,
@@ -178,10 +178,10 @@ end
                                  noise, idx_plus, idx_minus, ndim2)
     nbath = noise.nbath
     
-    # システム項: -i[H, ρₙ]
+    # System term: -i[H, ρₙ]
     @views mul!(dP[:, n], Ls, P[:, n], 1.0, 1.0)
     
-    # 減衰項: -Σₖ nₖγₖ ρₙ
+    # Damping term: -Σₖ nₖγₖ ρₙ
     @views dP[:, n] .-= ngamma[n] .* P[:, n]
     
     # 各熱浴について処理
