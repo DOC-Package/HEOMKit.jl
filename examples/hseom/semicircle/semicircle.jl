@@ -126,28 +126,24 @@ println("  Tunneling coupling Δ = $Δ cm⁻¹")
 # Interaction operator (σz coupling)
 V = ComplexF64[1 0; 0 -1]
 
-# Create Noise structure
-# For HSEOM with PSWF: expon is not used directly, D matrix handles time evolution
-expon = zeros(ComplexF64, n_terms)  # Placeholder (D matrix will be used instead)
-coeff = c_coeffs  # PSWF expansion coefficients
-
-bath = BathExp(expon, coeff, V; add_conjugate=false)  # No conjugate for PSWF
-noise = NoiseExp(bath)
-
 # φₖ(0) for PSWF expansion: evaluate basis functions at t=0
 phi0 = zeros(ComplexF64, n_terms)
 for k in 1:n_terms
     phi0[k] = pswfft.basis[k](0.0)
 end
 
+# Create BathGeneral with D matrix, phi0, and coefficients
+bath = BathGeneral(D_matrix, phi0, c_coeffs, V)
+noise = NoiseGeneral(bath)
+
 println("\nPSWF basis at t=0 (first 5 terms):")
 for k in 1:min(5, n_terms)
     println("  φ[$k](0) = $(phi0[k])")
 end
 
-# HSEOM system with D matrix
+# HSEOM system with NoiseGeneral
 ndepth = 6  # Keep small to avoid memory issues
-system = HSEOMSystem(H, noise, D_matrix, phi0, ndepth; hierarchy=:depth)
+system = HSEOMSystem(H, noise, ndepth; hierarchy=:depth)
 
 println("\nHSEOM System:")
 println("  Hierarchy depth: $ndepth")

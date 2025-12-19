@@ -9,7 +9,7 @@ export icm2ifs, ifs2icm
 export thermal_energy, inverse_temperature
 
 # noise.jl: Bath and Noise structures
-export BathExp, NoiseExp
+export BathExp, NoiseExp, BathGeneral, NoiseGeneral
 export drude_bath, brownian_bath
 export compute_heom_params
 
