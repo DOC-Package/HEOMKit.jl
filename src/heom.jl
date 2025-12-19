@@ -24,7 +24,7 @@ end
 
 Construct HEOM operators from Noise and hierarchy indices.
 """
-function HEOMOperators(noise::Noise, ado_idx::Matrix{Int}, nado::Int)
+function HEOMOperators(noise::NoiseExp, ado_idx::Matrix{Int}, nado::Int)
     nterms = noise.nterms
     nbath = noise.nbath
     
@@ -85,7 +85,7 @@ Type parameter M determines the matrix type (SparseMat or DenseMat).
 Fields: `noise`, `matrices`, `operators`, `ado_idx`, `idx_plus`, `idx_minus`, `nado`, `ndim`, `ndim2`
 """
 struct HEOMSystem{M<:AbstractMatrix{ComplexF64}}
-    noise::Noise
+    noise::NoiseExp
     matrices::HEOMMatrices{M}
     operators::HEOMOperators
     ado_idx::Matrix{Int}
@@ -111,7 +111,7 @@ Construct HEOM system.
 - `hierarchy`: Hierarchy construction method, `:depth` or `:width`
 - `sparse`: If true (default), use sparse matrices. If false, use dense matrices.
 """
-function HEOMSystem(H::AbstractMatrix, noise::Noise, ndepth::Int;
+function HEOMSystem(H::AbstractMatrix, noise::NoiseExp, ndepth::Int;
                     hierarchy::Symbol=:depth, sparse::Bool=true)
     # Construct matrices
     matrices = HEOMMatrices(H, noise; sparse=sparse)

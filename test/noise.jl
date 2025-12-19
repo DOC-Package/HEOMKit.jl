@@ -9,7 +9,7 @@ using Test
         coeff = [0.1 + 0.2im, 0.3 - 0.1im]
         V = ComplexF64[0 1; 1 0]  # σx
         
-        bath = Bath(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
         
         @test bath.nterms == 4  # 2 original + 2 conjugates
         @test size(bath.V) == (2, 2)
@@ -28,7 +28,7 @@ using Test
         coeff = [0.1, 0.2]
         V = ComplexF64[1 0; 0 -1]  # σz
         
-        bath = Bath(expon, coeff, V; add_conjugate=false)
+        bath = BathExp(expon, coeff, V; add_conjugate=false)
         
         @test bath.nterms == 2
         println("Bath (no conjugate): nterms = $(bath.nterms)")
@@ -39,8 +39,8 @@ using Test
         coeff = [0.5 + 0.2im]
         V = ComplexF64[0 1; 1 0]
         
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         @test noise.nbath == 1
         @test noise.nterms == bath.nterms
@@ -60,15 +60,15 @@ using Test
         expon1 = [1.0 + 0.1im, 2.0]
         coeff1 = [0.3, 0.4 + 0.1im]
         V1 = ComplexF64[0 1; 1 0]  # σx
-        bath1 = Bath(expon1, coeff1, V1; add_conjugate=true)
+        bath1 = BathExp(expon1, coeff1, V1; add_conjugate=true)
         
         # Bath 2
         expon2 = [3.0]
         coeff2 = [0.5]
         V2 = ComplexF64[1 0; 0 -1]  # σz
-        bath2 = Bath(expon2, coeff2, V2; add_conjugate=true)
+        bath2 = BathExp(expon2, coeff2, V2; add_conjugate=true)
         
-        noise = Noise([bath1, bath2])
+        noise = NoiseExp([bath1, bath2])
         
         @test noise.nbath == 2
         @test noise.nterms == bath1.nterms + bath2.nterms
@@ -92,8 +92,8 @@ using Test
         coeff = [0.1 + 0.2im, 0.3 - 0.1im]
         V = ComplexF64[0 1; 1 0]
         
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         bk, ak, cb = compute_heom_params(noise)
         

@@ -146,7 +146,7 @@ Construct HEOM matrices from Hamiltonian and Noise.
 - `noise`: Noise structure
 - `sparse`: If true (default), use sparse matrices. If false, use dense matrices.
 """
-function HEOMMatrices(H::AbstractMatrix, noise::Noise; sparse::Bool=true)
+function HEOMMatrices(H::AbstractMatrix, noise::NoiseExp; sparse::Bool=true)
     ndim = size(H, 1)
     ndim2 = ndim^2
     nbath = noise.nbath

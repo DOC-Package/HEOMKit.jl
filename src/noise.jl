@@ -1,22 +1,22 @@
 """
-    Bath
+    BathExp
 
 Single bath with exponential expansion of correlation function C(t) = Σₖ cₖ exp(-γₖt).
 
 Fields: `expon` (γₖ), `coeff` (cₖ), `nterms`, `V` (coupling operator)
 """
-struct Bath
+struct BathExp
     expon::Vector{ComplexF64}
     coeff::Vector{ComplexF64}
     nterms::Int
     V::Matrix{ComplexF64}
 end
 
-"""    Bath(expon, coeff, V; add_conjugate=true)
+"""    BathExp(expon, coeff, V; add_conjugate=true)
 
-Construct Bath from exponential parameters. Conjugate pairs added by default.
+Construct BathExp from exponential parameters. Conjugate pairs added by default.
 """
-function Bath(expon::Vector, coeff::Vector, V::AbstractMatrix;
+function BathExp(expon::Vector, coeff::Vector, V::AbstractMatrix;
               add_conjugate::Bool=true)
     if add_conjugate
         expon_full = vcat(ComplexF64.(expon), conj.(ComplexF64.(expon)))
@@ -26,17 +26,17 @@ function Bath(expon::Vector, coeff::Vector, V::AbstractMatrix;
         coeff_full = ComplexF64.(coeff)
     end
     nterms = length(expon_full)
-    return Bath(expon_full, coeff_full, nterms, ComplexF64.(V))
+    return BathExp(expon_full, coeff_full, nterms, ComplexF64.(V))
 end
 
 """
-    Noise
+    NoiseExp
 
 Unified noise parameters from multiple baths.
 
 Fields: `expon`, `coeff`, `abs_coeff`, `nterms`, `nbath`, `nterms_bath`, `jstart_bath`, `V`, `baths`
 """
-struct Noise
+struct NoiseExp
     expon::Vector{ComplexF64}
     coeff::Vector{ComplexF64}
     abs_coeff::Vector{Float64}
@@ -44,15 +44,15 @@ struct Noise
     nbath::Int
     nterms_bath::Vector{Int}
     jstart_bath::Vector{Int}
-    V::Vector{Matrix{ComplexF64}}
-    baths::Vector{Bath}
+    V::Vector{Matrix{ComplexF64}}     # List of interaction operators (nbath)
+    baths::Vector{BathExp}                # List of baths
 end
 
-"""    Noise(baths::Vector{Bath})
+"""    NoiseExp(baths::Vector{BathExp})
 
-Construct Noise from multiple Bath objects.
+Construct NoiseExp from multiple BathExp objects.
 """
-function Noise(baths::Vector{Bath})
+function NoiseExp(baths::Vector{BathExp})
     nbath = length(baths)
     
     # Parameter sizes and start positions for each bath
@@ -77,18 +77,18 @@ function Noise(baths::Vector{Bath})
     abs_coeff = abs.(coeff)
     V = [b.V for b in baths]
     
-    return Noise(expon, coeff, abs_coeff, nterms, nbath, nterms_bath, jstart_bath, V, baths)
+    return NoiseExp(expon, coeff, abs_coeff, nterms, nbath, nterms_bath, jstart_bath, V, baths)
 end
 
-function Noise(bath::Bath)
-    return Noise([bath])
+function NoiseExp(bath::BathExp)
+    return NoiseExp([bath])
 end
 
 """    compute_heom_params(noise) → (bk, ak, cb)
 
 Compute derived HEOM parameters.
 """
-function compute_heom_params(noise::Noise)
+function compute_heom_params(noise::NoiseExp)
     nterms = noise.nterms
     
     bk = [real(noise.expon[j]) + abs(imag(noise.expon[j])) for j in 1:nterms]
@@ -111,11 +111,11 @@ end
 # Display functions
 # =====================================
 
-function Base.show(io::IO, bath::Bath)
-    print(io, "Bath(nterms=$(bath.nterms))")
+function Base.show(io::IO, bath::BathExp)
+    print(io, "BathExp(nterms=$(bath.nterms))")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", bath::Bath)
+function Base.show(io::IO, ::MIME"text/plain", bath::BathExp)
     println(io, "Bath:")
     println(io, "  nterms = $(bath.nterms)")
     println(io, "  V size = $(size(bath.V))")
@@ -123,11 +123,11 @@ function Base.show(io::IO, ::MIME"text/plain", bath::Bath)
     println(io, "  cₖ range: $(minimum(abs.(bath.coeff))) - $(maximum(abs.(bath.coeff)))")
 end
 
-function Base.show(io::IO, noise::Noise)
-    print(io, "Noise(nterms=$(noise.nterms), nbath=$(noise.nbath))")
+function Base.show(io::IO, noise::NoiseExp)
+    print(io, "NoiseExp(nterms=$(noise.nterms), nbath=$(noise.nbath))")
 end
 
-function Base.show(io::IO, ::MIME"text/plain", noise::Noise)
+function Base.show(io::IO, ::MIME"text/plain", noise::NoiseExp)
     println(io, "Noise:")
     println(io, "  Total nterms = $(noise.nterms)")
     println(io, "  Number of baths = $(noise.nbath)")

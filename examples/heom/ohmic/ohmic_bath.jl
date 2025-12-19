@@ -50,8 +50,8 @@ end
 expon = ef.expon
 coeff = ef.coeff
 V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = Bath(expon, coeff, V; add_conjugate=true)
-noise = Noise(bath)
+bath = BathExp(expon, coeff, V; add_conjugate=true)
+noise = NoiseExp(bath)
 
 println("\nSystem Hamiltonian:")
 println("  Energy difference ε = $ε cm⁻¹")

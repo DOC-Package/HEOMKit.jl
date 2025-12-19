@@ -376,9 +376,11 @@ end
 Apply normalized HSEOM ket-side Liouville operator (in-place).
 
 ∂ₛ|φₙ⟩ = -iHₛ|φₙ⟩ 
-       + Σₖₗ √(nₖ(nₗ+1)) √(cₖ/cₗ) Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
-       - i Σₖ √((nₖ+1)cₖ) S |φₙ₊₁ₖ⟩
-       - i Σₖ √(nₖcₖ) φₖ(0) S |φₙ₋₁ₖ⟩
+       + Σₖₗ √(nₖ(nₗ+1)) Λₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
+       - i Σₖ √(nₖ+1) κₖ S |φₙ₊₁ₖ⟩
+       - i Σₖ √nₖ κₖ S |φₙ₋₁ₖ⟩
+
+where κₖ = √(φₖ(0)cₖ) and Λₖₗ = √(cₖ/cₗ φₗ(0)/φₖ(0)) Dₖₗ
 
 # Arguments
 - `parallel::Bool`: If true, use multi-threading for ADW loop.
@@ -420,13 +422,20 @@ end
         nterms_b = noise.nterms_bath[ibath]
         jend = jstart + nterms_b - 1
         
-        # D matrix term: Σₖₗ √(nₖ(nₗ+1)) √(cₖ/cₗ) Dₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
+        # D matrix term: Σₖₗ √(nₖ(nₗ+1)) Λₖₗ |φₙ₋₁ₖ₊₁ₗ⟩
+        # where Λₖₗ = √(cₖ/cₗ φₗ(0)/φₖ(0)) Dₖₗ
         for k in jstart:jend
             nk = adw_idx[k, n]
             if nk == 0
                 continue
             end
             ck = noise.coeff[k]
+            phi0_k = phi0[k - jstart + 1]
+            
+            # Skip if phi0_k is zero to avoid division by zero
+            if abs(phi0_k) < 1e-15
+                continue
+            end
             
             for ell in jstart:jend
                 Dkl = D[k - jstart + 1, ell - jstart + 1]
@@ -440,8 +449,10 @@ end
                     # nₗ for target state = adw_idx[ell, n] + 1 (since we're going to n+1_ℓ)
                     nl_target = adw_idx[ell, n] + 1
                     cl = noise.coeff[ell]
-                    # √(nₖ(nₗ+1)) √(cₖ/cₗ) Dₖₗ
-                    coef = sqrt(Complex(nk) * Complex(nl_target)) * sqrt(ck / cl) * Dkl
+                    phi0_l = phi0[ell - jstart + 1]
+                    # √(nₖ(nₗ+1)) Λₖₗ = √(nₖ(nₗ+1)) √(cₖ/cₗ φₗ(0)/φₖ(0)) Dₖₗ
+                    Lambda_kl = sqrt(ck / cl * phi0_l / phi0_k) * Dkl
+                    coef = sqrt(Complex(nk) * Complex(nl_target)) * Lambda_kl
                     @views dP[:, n] .+= coef .* P[:, idx_target]
                 end
             end
@@ -450,7 +461,8 @@ end
         # Interaction terms
         PTMPx = zeros(ComplexF64, ndim)
         
-        # Backward connection term: -i Σₖ √(nₖ cₖ) φₖ(0) S |φₙ₋₁ₖ⟩
+        # Backward connection term: -i Σₖ √nₖ κₖ S |φₙ₋₁ₖ⟩
+        # where κₖ = √(φₖ(0)cₖ)
         for k in jstart:jend
             nk = adw_idx[k, n]
             if nk == 0
@@ -460,17 +472,21 @@ end
             if nm > 0
                 phi0_k = phi0[k - jstart + 1]
                 ck = noise.coeff[k]
-                @views PTMPx .+= sqrt(Complex(nk) * ck) * phi0_k .* P[:, nm]
+                kappa_k = sqrt(phi0_k * ck)
+                @views PTMPx .+= sqrt(Complex(nk)) * kappa_k .* P[:, nm]
             end
         end
         
-        # Forward connection term: -i Σₖ √((nₖ+1) cₖ) S |φₙ₊₁ₖ⟩
+        # Forward connection term: -i Σₖ √(nₖ+1) κₖ S |φₙ₊₁ₖ⟩
+        # where κₖ = √(φₖ(0)cₖ)
         for k in jstart:jend
             nk = adw_idx[k, n]
             np = idx_plus[k, n]
             if np > 0
+                phi0_k = phi0[k - jstart + 1]
                 ck = noise.coeff[k]
-                @views PTMPx .+= sqrt(Complex(nk + 1) * ck) .* P[:, np]
+                kappa_k = sqrt(phi0_k * ck)
+                @views PTMPx .+= sqrt(Complex(nk + 1)) * kappa_k .* P[:, np]
             end
         end
         
@@ -488,9 +504,11 @@ end
 Apply normalized HSEOM bra-side Liouville operator (in-place).
 
 ∂ₛ|ψₙ⟩ = -iHₛ|ψₙ⟩ 
-       - Σₖₗ √((nₖ+1)nₗ) (√(cₖ/cₗ) Dₖₗ)* |ψₙ₊₁ₖ₋₁ₗ⟩
-       - i Σₖ √(nₖcₖ*) S |ψₙ₋₁ₖ⟩
-       - i Σₖ √((nₖ+1)cₖ*) φₖ(0) S |ψₙ₊₁ₖ⟩
+       - Σₖₗ √((nₖ+1)nₗ) Λₖₗ* |ψₙ₊₁ₖ₋₁ₗ⟩
+       - i Σₖ √nₖ κₖ* S |ψₙ₋₁ₖ⟩
+       - i Σₖ √(nₖ+1) κₖ* S |ψₙ₊₁ₖ⟩
+
+where κₖ = √(φₖ(0)cₖ) and Λₖₗ = √(cₖ/cₗ φₗ(0)/φₖ(0)) Dₖₗ
 
 # Arguments
 - `parallel::Bool`: If true, use multi-threading for ADW loop.
@@ -532,10 +550,17 @@ end
         nterms_b = noise.nterms_bath[ibath]
         jend = jstart + nterms_b - 1
         
-        # D matrix term: -Σₖₗ √((nₖ+1)nₗ) (√(cₖ/cₗ) Dₖₗ)* |ψₙ₊₁ₖ₋₁ₗ⟩
+        # D matrix term: -Σₖₗ √((nₖ+1)nₗ) Λₖₗ* |ψₙ₊₁ₖ₋₁ₗ⟩
+        # where Λₖₗ = √(cₖ/cₗ φₗ(0)/φₖ(0)) Dₖₗ
         for k in jstart:jend
             nk = adw_idx[k, n]
             ck = noise.coeff[k]
+            phi0_k = phi0[k - jstart + 1]
+            
+            # Skip if phi0_k is zero to avoid division by zero
+            if abs(phi0_k) < 1e-15
+                continue
+            end
             
             for ell in jstart:jend
                 Dkl = D[k - jstart + 1, ell - jstart + 1]
@@ -552,8 +577,10 @@ end
                         continue
                     end
                     cl = noise.coeff[ell]
-                    # -√((nₖ+1)nₗ) (√(cₖ/cₗ) Dₖₗ)*
-                    coef = -sqrt(Complex(nk + 1) * Complex(nl)) * conj(sqrt(ck / cl) * Dkl)
+                    phi0_l = phi0[ell - jstart + 1]
+                    # -√((nₖ+1)nₗ) Λₖₗ* = -√((nₖ+1)nₗ) (√(cₖ/cₗ φₗ(0)/φₖ(0)) Dₖₗ)*
+                    Lambda_kl = sqrt(ck / cl * phi0_l / phi0_k) * Dkl
+                    coef = -sqrt(Complex(nk + 1) * Complex(nl)) * conj(Lambda_kl)
                     @views dP[:, n] .+= coef .* P[:, idx_target]
                 end
             end
@@ -562,18 +589,21 @@ end
         # Interaction terms
         PTMPx = zeros(ComplexF64, ndim)
         
-        # Forward connection term: -i Σₖ √((nₖ+1) cₖ*) φₖ(0) S |ψₙ₊₁ₖ⟩
+        # Forward connection term: -i Σₖ √(nₖ+1) κₖ* S |ψₙ₊₁ₖ⟩
+        # where κₖ = √(φₖ(0)cₖ)
         for k in jstart:jend
             nk = adw_idx[k, n]
             np = idx_plus[k, n]
             if np > 0
                 phi0_k = phi0[k - jstart + 1]
                 ck = noise.coeff[k]
-                @views PTMPx .+= sqrt(Complex(nk + 1) * conj(ck)) * phi0_k .* P[:, np]
+                kappa_k = sqrt(phi0_k * ck)
+                @views PTMPx .+= sqrt(Complex(nk + 1)) * conj(kappa_k) .* P[:, np]
             end
         end
         
-        # Backward connection term: -i Σₖ √(nₖ cₖ*) S |ψₙ₋₁ₖ⟩
+        # Backward connection term: -i Σₖ √nₖ κₖ* S |ψₙ₋₁ₖ⟩
+        # where κₖ = √(φₖ(0)cₖ)
         for k in jstart:jend
             nk = adw_idx[k, n]
             if nk == 0
@@ -581,8 +611,10 @@ end
             end
             nm = idx_minus[k, n]
             if nm > 0
+                phi0_k = phi0[k - jstart + 1]
                 ck = noise.coeff[k]
-                @views PTMPx .+= sqrt(Complex(nk) * conj(ck)) .* P[:, nm]
+                kappa_k = sqrt(phi0_k * ck)
+                @views PTMPx .+= sqrt(Complex(nk)) * conj(kappa_k) .* P[:, nm]
             end
         end
         

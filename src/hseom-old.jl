@@ -21,7 +21,7 @@ Type parameter M determines the matrix type (dense or sparse).
 # Fields
 - `H::M`: System Hamiltonian
 - `V::Vector{M}`: Interaction operators (for each bath)
-- `noise::Noise`: Noise parameters
+- `noise::NoiseExp`: Noise parameters
 - `D::M`: D matrix for BCF expansion (∂ₜφₖ = Σₗ Dₖₗ φₗ)
 - `phi0::Vector{ComplexF64}`: Initial values of φₖ(0) (used in interaction terms)
 - `operators::HSEOMOperators`: HSEOM operators
@@ -37,7 +37,7 @@ Type parameter M determines the matrix type (dense or sparse).
 struct HSEOMSystem{M<:AbstractMatrix{ComplexF64}}
     H::M
     V::Vector{M}
-    noise::Noise
+    noise::NoiseExp
     D::M
     phi0::Vector{ComplexF64}
     operators::HSEOMOperators
@@ -65,7 +65,7 @@ Construct an HSEOM system.
 
 # Arguments
 - `H::AbstractMatrix`: System Hamiltonian
-- `noise::Noise`: Noise parameters
+- `noise::NoiseExp`: Noise parameters
 - `D::AbstractMatrix`: D matrix for BCF expansion (∂ₜφₖ = Σₗ Dₖₗ φₗ)
 - `ndepth::Int`: Hierarchy depth
 - `phi0::AbstractVector`: Initial values of φₖ(0) (defaults to Bessel expansion)
@@ -85,7 +85,7 @@ phi0[2:end] .= 0.0
 system = HSEOMSystem(H, noise, D, 5; phi0=phi0, sparse=true)
 ```
 """
-function HSEOMSystem(H::AbstractMatrix, noise::Noise, D::AbstractMatrix, phi0::AbstractVector, ndepth::Int;
+function HSEOMSystem(H::AbstractMatrix, noise::NoiseExp, D::AbstractMatrix, phi0::AbstractVector, ndepth::Int;
                      hierarchy::Symbol=:depth,
                      sparse::Bool=false)
     ndim = size(H, 1)

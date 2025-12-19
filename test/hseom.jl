@@ -16,8 +16,8 @@ using Test
         # ノイズパラメータ
         expon = ComplexF64[0.01 + 0.001im]
         coeff = ComplexF64[0.001 + 0.0001im]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         # HSEOMシステム構築
         ndepth = 3
@@ -54,8 +54,8 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
         system = HSEOMSystem(H, noise, D, 3)
@@ -89,8 +89,8 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
         system = HSEOMSystem(H, noise, D, 3)
@@ -124,8 +124,8 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
         system = HSEOMSystem(H, noise, D, 3)
@@ -157,8 +157,8 @@ using Test
         # 3つのモードを持つ熱浴
         expon = ComplexF64[0.01, 0.02, 0.03]
         coeff = ComplexF64[0.001, 0.002, 0.003]
-        bath = Bath(expon, coeff, V; add_conjugate=false)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=false)
+        noise = NoiseExp(bath)
         
         # 一般の D 行列（ここでは三重対角）
         D = build_tridiagonal_D(noise.nterms, 0.05)
@@ -190,8 +190,8 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         ndepth = 3
         
@@ -233,8 +233,8 @@ using Test
         
         expon = ComplexF64[0.01 + 0.001im]
         coeff = ComplexF64[0.001 + 0.0001im]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         # HSEOM システム
         D = build_tridiagonal_D(noise.nterms, 0.05)
@@ -275,8 +275,8 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = Bath(expon, coeff, V; add_conjugate=true)
-        noise = Noise(bath)
+        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
         system = HSEOMSystem(H, noise, D, 3)

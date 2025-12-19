@@ -169,8 +169,8 @@ ndepth = 10
 # ----- HSEOM Setup -----
 println("\nHSEOM Setup:")
 expon_hseom = zeros(ComplexF64, n_bessel)  # Placeholder (D matrix used instead)
-bath_hseom = Bath(expon_hseom, c_bessel, V; add_conjugate=false)
-noise_hseom = Noise(bath_hseom)
+bath_hseom = BathExp(expon_hseom, c_bessel, V; add_conjugate=false)
+noise_hseom = NoiseExp(bath_hseom)
 
 hseom_system = HSEOMSystem(H, noise_hseom, D_bessel, ndepth; phi0=phi0_bessel, hierarchy=:depth)
 println("  HSEOM ADWs: $(hseom_system.nadw)")
@@ -182,8 +182,8 @@ Pk0 = initial_adw(hseom_system, 1)
 
 # ----- HEOM Setup -----
 println("\nHEOM Setup:")
-bath_heom = Bath(γ_heom, c_heom, V; add_conjugate=true)
-noise_heom = Noise(bath_heom)
+bath_heom = BathExp(γ_heom, c_heom, V; add_conjugate=true)
+noise_heom = NoiseExp(bath_heom)
 
 heom_system = HEOMSystem(H, noise_heom, ndepth; hierarchy=:depth)
 println("  HEOM ADOs: $(heom_system.nado)")
