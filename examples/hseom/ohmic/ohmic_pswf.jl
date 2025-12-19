@@ -52,13 +52,18 @@ println("  Temperature T = $T K")
 # =============================================
 
 # PSWF expansion parameters
-ω_min = -150.0   # Lower frequency bound [cm⁻¹]
-ω_max = 200.0    # Upper frequency bound [cm⁻¹]
+ω_min = -250.0   # Lower frequency bound [cm⁻¹]
+ω_max = 300.0    # Upper frequency bound [cm⁻¹]
 n_terms = 15     # Number of PSWF terms
-T_pswf = 700.0  # Time duration parameter [fs]
+T_pswf = 50.0  # Time duration parameter [fs]
 # Time evolution parameters
-t_end = 700.0    # [fs]
+t_end = 500.0    # [fs]
 dt = 0.25         # [fs]
+
+# System Hamiltonian (two-level system)
+ε = 0.0      # Energy difference [cm⁻¹]
+Δ = 20.0    # Tunneling coupling [cm⁻¹]
+H = ComplexF64[ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
 
 println("\nPSWF Expansion Parameters:")
 println("  Frequency range: [$ω_min, $ω_max] cm⁻¹")
@@ -114,11 +119,6 @@ println("\n" * "=" ^ 60)
 println("3. Building HSEOM System")
 println("=" ^ 60)
 
-# System Hamiltonian (two-level system)
-ε = 0.0      # Energy difference [cm⁻¹]
-Δ = 100.0    # Tunneling coupling [cm⁻¹]
-H = ComplexF64[ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
-
 println("\nSystem Hamiltonian:")
 println("  Energy difference ε = $ε cm⁻¹")
 println("  Tunneling coupling Δ = $Δ cm⁻¹")
@@ -146,7 +146,7 @@ for k in 1:min(5, n_terms)
 end
 
 # HSEOM system with D matrix
-ndepth = 6  # Keep small to avoid memory issues
+ndepth = 8  # Keep small to avoid memory issues
 system = HSEOMSystem(H, noise, D_matrix, phi0, ndepth; hierarchy=:depth)
 
 println("\nHSEOM System:")

@@ -10,15 +10,23 @@ s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γ = 50.0      # Cutoff frequency [cm⁻¹]
 λ = 5.0       # Reorganization energy [cm⁻¹]
 T = 300.0      # Temperature [K]
-sd = PowerLawExpSD(s, γ; reorgene=λ)
+sd = SemicircleSD(s, γ, λ)
 bcf = BosonicBCF(sd, T)
 
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 700.0   # [fs]
+tmax = 200.0   # [fs]
 nsamples = 500
 eps = 1e-3     # ESPRIT tolerance
+# Time evolution parameters
+t_end = 200.0    # [fs]
+dt_evolve = 0.25  # [fs]
+
+# System Hamiltonian (two-level system)
+ε = 0.0      # Energy difference [cm⁻¹]
+Δ = 20.0    # Tunneling coupling [cm⁻¹]
+H = [ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
 
 dt = (tmax - tmin) / (nsamples - 1)
 t_samples = range(tmin, tmax, length=nsamples)
@@ -45,17 +53,12 @@ V = ComplexF64[1 0; 0 -1]  # σz coupling
 bath = Bath(expon, coeff, V; add_conjugate=true)
 noise = Noise(bath)
 
-# System Hamiltonian (two-level system)
-ε = 0.0      # Energy difference [cm⁻¹]
-Δ = 100.0    # Tunneling coupling [cm⁻¹]
-H = [ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
-
 println("\nSystem Hamiltonian:")
 println("  Energy difference ε = $ε cm⁻¹")
 println("  Tunneling coupling Δ = $Δ cm⁻¹")
 
 # HEOM system
-ndepth = 6
+ndepth = 8
 system = HEOMSystem(H, noise, ndepth; hierarchy=:depth)
 println("\nHEOM System:")
 println("  Hierarchy depth: $ndepth")
@@ -64,10 +67,6 @@ println("  Number of ADOs: $(system.nado)")
 # Initial condition: localized on state |1⟩
 P0 = initial_ado(system, 1)
 
-# Time evolution parameters
-t_end = 700.0    # [fs]
-dt_evolve = 0.5  # [fs]
-
 println("\nTime Evolution:")
 println("  Initial state: |1⟩⟨1|")
 println("  Time range: [0, $t_end] fs")
@@ -75,7 +74,7 @@ println("  Time step: $dt_evolve fs")
 
 # Run dynamics
 println("\nRunning HEOM dynamics...")
-times, pops = evolve(system, P0, (0.0, t_end), dt_evolve)
+times, pops = evolve(system, P0, (0.0, t_end), dt_evolve; parallel=true, savefile="pop_heom.dat", save_interval=10)
 
 println("  Done!")
 println("  Final populations: ρ₁₁ = $(pops[1,end]), ρ₂₂ = $(pops[2,end])")
@@ -98,8 +97,8 @@ ax1 = Axis(fig1[1, 1],
     ylabel = "Population",
     title = "Two-Level System with Ohmic Bath\n(λ=$λ cm⁻¹, γ=$γ cm⁻¹, T=$T K)"
 )
-lines!(ax1, times, real.(pops[1, :]), linewidth=2, label="ρ₁₁")
-lines!(ax1, times, real.(pops[2, :]), linewidth=2, label="ρ₂₂")
+lines!(ax1, times, real.(pops[1, :]), linewidth=2, label="ρ₁₁", color=:blue)
+lines!(ax1, times, real.(pops[2, :]), linewidth=2, label="ρ₂₂", color=:red)
 axislegend(ax1, position=:rt)
 save(joinpath(outdir, "population_ohmic.png"), fig1)
 println("  Saved: $(joinpath(outdir, "population_ohmic.png"))")

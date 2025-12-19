@@ -135,40 +135,6 @@ end
 
 
 """
-    build_tridiagonal_D(nterms::Int, gamma_c::Number)
-
-Build tridiagonal D matrix (for Bessel expansion).
-
-D[k,k] = 0 (diagonal terms handled by single-mode transitions)
-D[k,k-1] = +γc/2
-D[k,k+1] = -γc/2
-For k=1: D[1,2] = -γc
-"""
-function build_tridiagonal_D(nterms::Int, gamma_c::Number)
-    D = zeros(ComplexF64, nterms, nterms)
-    gc = ComplexF64(gamma_c)
-    
-    # k=1: special case
-    if nterms > 1
-        D[1, 2] = -gc
-    end
-    
-    # k=2 to nterms-1: intermediate modes
-    for k in 2:(nterms-1)
-        D[k, k-1] = 0.5 * gc
-        D[k, k+1] = -0.5 * gc
-    end
-    
-    # k=nterms: last mode (no k+1)
-    if nterms > 1
-        D[nterms, nterms-1] = 0.5 * gc
-    end
-    
-    return D
-end
-
-
-"""
     liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem;
                    parallel::Bool=false)
 
@@ -334,7 +300,7 @@ end
             nk = adw_idx[k, n]
             
             for ell in jstart:jend
-                Dkl = D[k - jstart + 1, ell - jstart + 1]
+                Dkl = conj(D[k - jstart + 1, ell - jstart + 1])
                 if Dkl == 0.0
                     continue
                 end
