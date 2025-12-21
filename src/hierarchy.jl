@@ -86,121 +86,317 @@ end
 
 
 """
-    hierarchy_index_width(nmode, ndepth, gamk, ck, bk; ak=1.0, tolerance=1e-6)
+    hierarchy_index_width(nmode, ndepth; D=nothing, γ=nothing, c=nothing, S_norm=1.0, 
+                         tolerance=1e-6, filter=false)
 
-Return (nado, ado_idx, idx_plus, idx_minus) using breadth-first search (BFS) based hierarchy construction.
-This method filters hierarchy indices based on a norm criterion.
+Return (nado, ado_idx, idx_plus, idx_minus) using BFS-based hierarchy construction.
+Supports norm-based filtering for HSEOM and HEOM.
+
+# Filtering Criterion (HSEOM)
+Effective decay rate: γₖᵉᶠᶠ = -(Re(Dₖₖ) + Σₗ≠ₖ |Dₖₗ|)
+Weight coefficient: aₖ = √|cₖ| × ‖S‖_max / γₖᵉᶠᶠ  
+Norm: Wₙ = ∏ₖ aₖⁿₖ / √(nₖ!)
+Include ADO if: Wₙ > tolerance
 
 # Arguments
-- `nmode::Int`: Number of noise modes (Jmax)
-- `ndepth::Int`: Maximum depth (Nmax)
-- `gamk::Vector`: Gamma values for each mode
-- `ck::Vector`: c coefficients for each mode
-- `bk::Vector`: b coefficients for each mode
-- `ak::Real`: Exponent parameter (default: 1.0)
-- `tolerance::Real`: Tolerance for filtering (default: 1e-6)
+- `nmode::Int`: Number of modes K
+- `ndepth::Int`: Maximum hierarchy depth (safety limit)
+
+# Keyword Arguments
+- `D::Matrix`: Mode coupling matrix (K × K) for HSEOM
+- `γ::Vector`: Decay rates for HEOM (alternative to D)
+- `c::Vector`: BCF coefficients cₖ
+- `S_norm::Real`: System operator norm ‖S‖_max (default: 1.0)
+- `tolerance::Real`: Filtering threshold (default: 1e-6)
+- `filter::Bool`: Enable filtering (default: false)
 
 # Returns
 - `nado::Int`: Total number of ADOs
 - `ado_idx::Matrix{Int}`: Index vectors for each ADO
-- `idx_plus::Matrix{Int}`: Forward connection indices
+- `idx_plus::Matrix{Int}`: Forward connection indices  
 - `idx_minus::Matrix{Int}`: Backward connection indices
+
+# Examples
+```julia
+# HEOM (diagonal decay)
+γ = [0.5, 1.0, 2.0]
+c = [1.0, 0.5, 0.3]
+nado, ado_idx, idx_plus, idx_minus = hierarchy_index_width(3, 10; 
+    γ=γ, c=c, tolerance=1e-5, filter=true)
+
+# HSEOM (non-diagonal D)
+D = [-1.0 0.2; 0.2 -2.0]
+c = [1.0, 0.5]
+nado, ado_idx, idx_plus, idx_minus = hierarchy_index_width(2, 10;
+    D=D, c=c, S_norm=1.0, tolerance=1e-5, filter=true)
+```
 """
-function hierarchy_index_width(nmode::Int, ndepth::Int,
-                               gamk::Vector, ck::Vector, bk::Vector;
-                               ak::Real=1.0, tolerance::Real=1e-6,
+function hierarchy_index_width(nmode::Int, ndepth::Int;
+                               D::Union{Nothing, AbstractMatrix}=nothing,
+                               γ::Union{Nothing, AbstractVector}=nothing,
+                               c::Union{Nothing, AbstractVector}=nothing,
+                               S_norm::Real=1.0,
+                               tolerance::Real=1e-6,
                                filter::Bool=false)
-    # Hash map: index vector -> ADO index
-    idx_hm = Dict{Vector{Int}, Int}()
     
-    # Queues for BFS
-    idx_queue = Vector{Vector{Int}}()
-    klm_queue = Vector{Int}()
-    
-    # Estimate maximum number of indices
-    n_est = binomial(ndepth + nmode, nmode)
-    nvtmp = zeros(Int, nmode, n_est)
-    
-    # Initialize with zero vector
-    idx = zeros(Int, nmode)
-    push!(idx_queue, copy(idx))
-    push!(klm_queue, 1)
-    
-    n_idx = 0  # 0-based counter for compatibility
-    
-    while !isempty(idx_queue)
-        idx = popfirst!(idx_queue)
-        klm = popfirst!(klm_queue)
-        
-        # Register current index
-        idx_hm[copy(idx)] = n_idx
-        nvtmp[:, n_idx + 1] = idx  # Julia is 1-based
-        n_idx += 1
-        
-        # Explore neighbors
-        for k in klm:nmode
-            idx[k] += 1
-            dpt = sum(idx)
-            
-            # Calculate norm for filtering
-            ngam = sum(idx[j] * real(gamk[j]) for j in 1:nmode)
-            
-            norm_val = 1.0
-            for j in 1:nmode
-                norm_val *= abs(ck[j] / bk[j])^idx[j] / factorial(big(idx[j]))^ak
-            end
-            norm_val = ngam > 0 ? norm_val / ngam : Inf
-            
-            # Filter condition
-            if filter
-                filtered = !(norm_val > tolerance && dpt <= ndepth)
-            else
-                filtered = dpt > ndepth
-            end
-            
-            if !filtered
-                push!(idx_queue, copy(idx))
-                push!(klm_queue, k)
-            end
-            
-            idx[k] -= 1
+    # Compute filtering weights if filtering enabled
+    if filter
+        if c === nothing
+            error("c (BCF coefficients) required for filtering")
         end
         
-        if n_idx >= n_est
-            break
+        # Compute filtering weights based on method
+        if D !== nothing
+            # HSEOM: Use coefficient-based weights (no decay rate division)
+            # aₖ = √|cₖ| × ‖S‖_max
+            # This is appropriate for oscillatory bases like PSWF where D_kk is purely imaginary
+            a = _compute_filtering_weights_hseom(c, S_norm)
+        elseif γ !== nothing
+            # HEOM: Use decay-rate-based weights
+            # aₖ = √|cₖ| × ‖S‖_max / γₖ
+            γ_eff = Float64.(real.(γ))
+            a = _compute_filtering_weights_heom(c, S_norm, γ_eff)
+        else
+            error("Either D (matrix) or γ (vector) required for filtering")
+        end
+    else
+        a = nothing
+    end
+    
+    # BFS-based hierarchy construction
+    idx_hm = Dict{Vector{Int}, Int}()
+    ado_list = Vector{Vector{Int}}()
+    queue = Vector{Tuple{Vector{Int}, Int}}()
+    
+    # Initialize with zero vector
+    idx_zero = zeros(Int, nmode)
+    push!(queue, (idx_zero, 1))
+    idx_hm[copy(idx_zero)] = 1
+    push!(ado_list, copy(idx_zero))
+    
+    while !isempty(queue)
+        idx, k_min = popfirst!(queue)
+        
+        for k in k_min:nmode
+            idx_child = copy(idx)
+            idx_child[k] += 1
+            depth = sum(idx_child)
+            
+            # Skip if already visited
+            if haskey(idx_hm, idx_child)
+                continue
+            end
+            
+            # Depth limit
+            if depth > ndepth
+                continue
+            end
+            
+            # Filtering criterion
+            include_ado = true
+            if filter && a !== nothing
+                W = _compute_hierarchy_norm(idx_child, a)
+                include_ado = W > tolerance
+            end
+            
+            if include_ado
+                n_new = length(ado_list) + 1
+                idx_hm[copy(idx_child)] = n_new
+                push!(ado_list, copy(idx_child))
+                push!(queue, (idx_child, k))
+            end
         end
     end
     
-    nado = n_idx
+    nado = length(ado_list)
+    
+    # Build arrays
+    ado_idx = zeros(Int, nmode, nado)
+    for n in 1:nado
+        ado_idx[:, n] = ado_list[n]
+    end
     
     # Build connection matrices
-    ado_idx = zeros(Int, nmode, nado)
     idx_plus = fill(-1, nmode, nado)
     idx_minus = fill(-1, nmode, nado)
     
     for n in 1:nado
-        idx = nvtmp[:, n]
-        ado_idx[:, n] = idx
-        
+        idx = ado_list[n]
         for k in 1:nmode
-            # Forward connection (idx[k] + 1)
-            idx[k] += 1
-            idx_p = get(idx_hm, idx, -1)
-            idx_plus[k, n] = idx_p >= 0 ? idx_p + 1 : -1  # Convert to 1-based
-            idx[k] -= 1
+            # Forward
+            idx_p = copy(idx)
+            idx_p[k] += 1
+            idx_plus[k, n] = get(idx_hm, idx_p, -1)
             
-            # Backward connection (idx[k] - 1)
-            idx[k] -= 1
-            if idx[k] >= 0
-                idx_m = get(idx_hm, idx, -1)
-                idx_minus[k, n] = idx_m >= 0 ? idx_m + 1 : -1  # Convert to 1-based
+            # Backward
+            if idx[k] > 0
+                idx_m = copy(idx)
+                idx_m[k] -= 1
+                idx_minus[k, n] = get(idx_hm, idx_m, -1)
             end
-            idx[k] += 1
         end
     end
     
     return nado, ado_idx, idx_plus, idx_minus
 end
+
+# Legacy interface for backward compatibility
+function hierarchy_index_width(nmode::Int, ndepth::Int,
+                               gamk::Vector, ck::Vector, bk::Vector;
+                               ak::Real=1.0, tolerance::Real=1e-6,
+                               filter::Bool=false)
+    if filter
+        # Use new filtering with γ = gamk
+        return hierarchy_index_width(nmode, ndepth;
+                                     γ=gamk, c=ck, tolerance=tolerance, filter=true)
+    else
+        # No filtering: just use depth limit
+        return hierarchy_index_width(nmode, ndepth; filter=false)
+    end
+end
+
+
+"""
+    hierarchy_index_width(noise::NoiseExp, ndepth; S_norm=1.0, tolerance=1e-6, filter=false)
+
+Construct hierarchy from NoiseExp (HEOM exponential expansion).
+Extracts γ = real(expon) and c = coeff from the noise object.
+
+# Arguments
+- `noise::NoiseExp`: Noise parameters with exponential expansion
+- `ndepth::Int`: Maximum hierarchy depth
+
+# Keyword Arguments  
+- `S_norm::Real`: System operator norm (default: 1.0, or computed from noise.V)
+- `tolerance::Real`: Filtering threshold (default: 1e-6)
+- `filter::Bool`: Enable filtering (default: false)
+"""
+function hierarchy_index_width(noise::NoiseExp, ndepth::Int;
+                               S_norm::Union{Real, Nothing}=nothing,
+                               tolerance::Real=1e-6,
+                               filter::Bool=false)
+    nmode = noise.nterms
+    
+    if filter
+        # Extract parameters for filtering
+        γ = real.(noise.expon)  # Decay rates
+        c = noise.coeff         # BCF coefficients
+        
+        # Compute S_norm from interaction operators if not provided
+        if S_norm === nothing
+            S_norm = maximum(opnorm(V) for V in noise.V)
+        end
+        
+        return hierarchy_index_width(nmode, ndepth; γ=γ, c=c, S_norm=S_norm, 
+                                     tolerance=tolerance, filter=true)
+    else
+        return hierarchy_index_width(nmode, ndepth; filter=false)
+    end
+end
+
+
+"""
+    hierarchy_index_width(noise::NoiseGeneral, ndepth; S_norm=1.0, tolerance=1e-6, filter=false)
+
+Construct hierarchy from NoiseGeneral (HSEOM general expansion).
+Extracts D matrix and c = coeff from the noise object.
+
+# Arguments
+- `noise::NoiseGeneral`: Noise parameters with general basis expansion
+- `ndepth::Int`: Maximum hierarchy depth
+
+# Keyword Arguments
+- `S_norm::Real`: System operator norm (default: 1.0, or computed from noise.V)
+- `tolerance::Real`: Filtering threshold (default: 1e-6)
+- `filter::Bool`: Enable filtering (default: false)
+"""
+function hierarchy_index_width(noise::NoiseGeneral, ndepth::Int;
+                               S_norm::Union{Real, Nothing}=nothing,
+                               tolerance::Real=1e-6,
+                               filter::Bool=false)
+    nmode = noise.nterms
+    
+    if filter
+        # Extract parameters for filtering
+        D = noise.D       # Derivative matrix
+        c = noise.coeff   # BCF coefficients
+        
+        # Compute S_norm from interaction operators if not provided
+        if S_norm === nothing
+            S_norm = maximum(opnorm(V) for V in noise.V)
+        end
+        
+        return hierarchy_index_width(nmode, ndepth; D=D, c=c, S_norm=S_norm,
+                                     tolerance=tolerance, filter=true)
+    else
+        return hierarchy_index_width(nmode, ndepth; filter=false)
+    end
+end
+
+
+# =====================================
+# Internal Helper Functions
+# =====================================
+
+"""
+Compute filtering weights for HEOM: aₖ = √|cₖ| × ‖S‖_max / γₖ
+
+Uses decay rate γₖ in denominator (appropriate for exponential basis).
+"""
+function _compute_filtering_weights_heom(c::AbstractVector, S_norm::Real, γ::AbstractVector)
+    K = length(c)
+    a = zeros(Float64, K)
+    for k in 1:K
+        if γ[k] > 0
+            a[k] = sqrt(abs(c[k])) * S_norm / γ[k]
+        else
+            a[k] = Inf  # Include non-decaying modes
+        end
+    end
+    return a
+end
+
+"""
+Compute filtering weights for HSEOM: aₖ = √|cₖ| × ‖S‖_max
+
+No decay rate division (appropriate for oscillatory bases like PSWF
+where D_kk is purely imaginary and doesn't represent decay).
+"""
+function _compute_filtering_weights_hseom(c::AbstractVector, S_norm::Real)
+    K = length(c)
+    a = zeros(Float64, K)
+    for k in 1:K
+        a[k] = sqrt(abs(c[k])) * S_norm
+    end
+    return a
+end
+
+"""
+Compute hierarchy norm: Wₙ = ∏ₖ aₖⁿₖ / √(nₖ!)
+"""
+function _compute_hierarchy_norm(n::AbstractVector{<:Integer}, a::AbstractVector{<:Real})
+    log_W = 0.0
+    for k in eachindex(n)
+        if n[k] > 0
+            if isinf(a[k])
+                return Inf
+            end
+            log_W += n[k] * log(a[k]) - 0.5 * _logfactorial(n[k])
+        end
+    end
+    return exp(log_W)
+end
+
+function _logfactorial(n::Integer)
+    n <= 1 && return 0.0
+    n <= 20 && return log(factorial(big(n)))
+    return n * log(n) - n + 0.5 * log(2π * n)  # Stirling
+end
+
+
+# =====================================
+# Exported utility functions for users
+# =====================================
 
 
 """
