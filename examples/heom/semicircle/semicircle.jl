@@ -8,7 +8,7 @@ using CairoMakie
 # Spectral density parameters
 s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γ = 50.0      # Cutoff frequency [cm⁻¹]
-λ = 5.0       # Reorganization energy [cm⁻¹]
+λ = 1.0       # Reorganization energy [cm⁻¹]
 T = 300.0      # Temperature [K]
 sd = SemicircleSD(s, γ, λ)
 bcf = BosonicBCF(sd, T)
@@ -16,12 +16,12 @@ bcf = BosonicBCF(sd, T)
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 200.0   # [fs]
+tmax = 1000.0   # [fs]
 nsamples = 500
 eps = 1e-3     # ESPRIT tolerance
 # Time evolution parameters
-t_end = 200.0    # [fs]
-dt_evolve = 0.25  # [fs]
+t_end = 1000.0    # [fs]
+dt_evolve = 0.5  # [fs]
 
 # System Hamiltonian (two-level system)
 ε = 0.0      # Energy difference [cm⁻¹]

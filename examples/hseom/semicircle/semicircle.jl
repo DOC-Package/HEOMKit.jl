@@ -35,10 +35,10 @@ println("=" ^ 60)
 # Spectral density: J(ω) = α * ω^s * exp(-ω/γc)
 s = 1.0          # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γc = 50.0        # Cutoff frequency [cm⁻¹]
-λ = 5.0         # Reorganization energy [cm⁻¹]
+λ = 1.0         # Reorganization energy [cm⁻¹]
 T = 300.0        # Temperature [K]
 
-sd = SemicircleSD(s, γc,λ)
+sd = SemicircleSD(s, γc, λ)
 reorgene_calc = reorganization_energy(sd; ub=50.0)
 
 println("\nSpectral Density Parameters:")
@@ -54,10 +54,10 @@ println("  Temperature T = $T K")
 # PSWF expansion parameters
 ω_min = -50.0   # Lower frequency bound [cm⁻¹]
 ω_max = 50.0    # Upper frequency bound [cm⁻¹]
-n_terms = 8     # Number of PSWF terms
-T_pswf = 200.0  # Time duration parameter [fs]
+n_terms = 6     # Number of PSWF terms
+T_pswf = 1000.0  # Time duration parameter [fs]
 # Time evolution parameters
-t_end = 200.0    # [fs]
+t_end = 1000.0    # [fs]
 dt = 0.25         # [fs]
 
 # System Hamiltonian (two-level system)
@@ -141,12 +141,30 @@ for k in 1:min(5, n_terms)
     println("  φ[$k](0) = $(phi0[k])")
 end
 
-# HSEOM system with NoiseGeneral
-ndepth = 6  # Keep small to avoid memory issues
-system = HSEOMSystem(H, noise, ndepth; hierarchy=:depth)
+# =============================================
+# Hierarchy construction (with filtering)
+# =============================================
+ndepth = 25  # Maximum depth (safety limit)
+tol = 1e-30  # Filtering tolerance
+
+# Build filtered hierarchy using new optimized method
+println("\nBuilding hierarchy with filtering (tol=$tol)...")
+@time nado, ado_idx, idx_plus, idx_minus = hierarchy_index_width(noise, ndepth;
+    S_norm=opnorm(V), tolerance=tol, filter=true)
+
+# Compare with full hierarchy size
+full_size = binomial(n_terms + ndepth, n_terms)
+println("  Full hierarchy size: $full_size")
+println("  Filtered size: $nado ($(round(nado/full_size*100, digits=1))%)")
+
+# Build HSEOM index maps for two-mode transitions
+hseom_idx = build_hseom_index_maps(ado_idx, nado, n_terms)
+
+# HSEOM system with filtered hierarchy
+system = HSEOMSystem(H, noise, nado, ado_idx, idx_plus, idx_minus, hseom_idx)
 
 println("\nHSEOM System:")
-println("  Hierarchy depth: $ndepth")
+println("  Max hierarchy depth: $ndepth")
 println("  Number of ADWs: $(system.nadw)")
 println("  Hilbert space dimension: $(system.ndim)")
 println("  Number of BCF terms: $(system.nterms)")

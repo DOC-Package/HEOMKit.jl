@@ -203,6 +203,77 @@ end
 
 
 """
+    HSEOMSystem(H::AbstractMatrix, noise::NoiseGeneral, nadw::Int,
+                adw_idx::Matrix{Int}, idx_plus::Matrix{Int}, idx_minus::Matrix{Int},
+                hseom_idx::NamedTuple; sparse::Bool=false)
+
+Construct an HSEOM system with custom (filtered) hierarchy indices.
+
+# Arguments
+- `H::AbstractMatrix`: System Hamiltonian
+- `noise::NoiseGeneral`: Noise parameters with general basis
+- `nadw::Int`: Number of ADWs
+- `adw_idx::Matrix{Int}`: Hierarchy index (nterms × nadw)
+- `idx_plus::Matrix{Int}`: Forward connection indices
+- `idx_minus::Matrix{Int}`: Backward connection indices
+- `hseom_idx::NamedTuple`: Two-mode transition indices from `build_hseom_index_maps`
+- `sparse::Bool`: If true, use sparse matrices
+
+# Example
+```julia
+nado, ado_idx, idx_plus, idx_minus = hierarchy_index_width(noise, 8;
+    tolerance=1e-8, filter=true)
+hseom_idx = build_hseom_index_maps(ado_idx, nado, noise.nterms)
+system = HSEOMSystem(H, noise, nado, ado_idx, idx_plus, idx_minus, hseom_idx)
+```
+"""
+function HSEOMSystem(H::AbstractMatrix, noise::NoiseGeneral, nadw::Int,
+                     adw_idx::Matrix{Int}, idx_plus::Matrix{Int}, idx_minus::Matrix{Int},
+                     hseom_idx::NamedTuple;
+                     sparse::Bool=false)
+    ndim = size(H, 1)
+    
+    # Build matrices as sparse or dense
+    if sparse
+        H_mat = SparseMatrixCSC{ComplexF64, Int}(H)
+        D_mat = SparseMatrixCSC{ComplexF64, Int}(noise.D)
+        V = [SparseMatrixCSC{ComplexF64, Int}(noise.V[ibath]) for ibath in 1:noise.nbath]
+    else
+        H_mat = Matrix{ComplexF64}(H)
+        D_mat = Matrix{ComplexF64}(noise.D)
+        V = [Matrix{ComplexF64}(noise.V[ibath]) for ibath in 1:noise.nbath]
+    end
+    
+    # Extract parameters from NoiseGeneral
+    nterms = noise.nterms
+    phi0_vec = Vector{ComplexF64}(noise.phi0)
+    
+    # Build operators
+    operators = HSEOMOperators(adw_idx)
+    
+    # Create a NoiseExp-like structure for internal use
+    noise_exp = NoiseExp(
+        zeros(ComplexF64, nterms),  # expon (not used for general basis)
+        noise.coeff,
+        abs.(noise.coeff),
+        nterms,
+        noise.nbath,
+        noise.nterms_bath,
+        noise.jstart_bath,
+        noise.V,
+        BathExp[]  # Empty baths vector
+    )
+    
+    return HSEOMSystem(
+        H_mat, V, noise_exp, D_mat, phi0_vec, operators, adw_idx, idx_plus, idx_minus,
+        hseom_idx.idx_minus_plus,
+        hseom_idx.idx_plus_minus,
+        nadw, ndim, nterms
+    )
+end
+
+
+"""
     liouville_ket!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HSEOMSystem;
                    parallel::Bool=false)
 

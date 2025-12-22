@@ -1,3 +1,46 @@
+# =====================================
+# Helper Functions (must be defined first for @generated)
+# =====================================
+
+"""
+Precompute log-factorials for fast norm calculation.
+"""
+@inline function _precompute_log_factorials(max_n::Int)
+    log_fact = zeros(Float64, max_n + 1)
+    log_fact[1] = 0.0  # log(0!) = 0
+    for i in 1:max_n
+        log_fact[i + 1] = log_fact[i] + log(i)
+    end
+    return log_fact
+end
+
+"""
+Fast norm check using precomputed log-factorials.
+Returns true if norm > tolerance.
+"""
+@inline function _check_norm_fast(idx::AbstractVector{Int}, 
+                                   log_a::AbstractVector{Float64},
+                                   log_fact::AbstractVector{Float64},
+                                   tolerance::Real)
+    log_W = 0.0
+    @inbounds for k in eachindex(idx)
+        n_k = idx[k]
+        if n_k > 0
+            log_W += n_k * log_a[k] - 0.5 * log_fact[n_k + 1]
+        end
+    end
+    return exp(log_W) > tolerance
+end
+
+"""
+Convert vector to tuple for NTuple{K} (compile-time generated).
+"""
+@generated function _vec_to_tuple(::Val{K}, v::Vector{Int}) where K
+    exprs = [:(v[$i]) for i in 1:K]
+    return Expr(:tuple, exprs...)
+end
+
+
 """
     hierarchy_index_depth(nmode, ndepth)
 
@@ -148,96 +191,347 @@ function hierarchy_index_width(nmode::Int, ndepth::Int;
         # Compute filtering weights based on method
         if D !== nothing
             # HSEOM: Use coefficient-based weights (no decay rate division)
-            # aₖ = √|cₖ| × ‖S‖_max
-            # This is appropriate for oscillatory bases like PSWF where D_kk is purely imaginary
             a = _compute_filtering_weights_hseom(c, S_norm)
         elseif γ !== nothing
             # HEOM: Use decay-rate-based weights
-            # aₖ = √|cₖ| × ‖S‖_max / γₖ
             γ_eff = Float64.(real.(γ))
             a = _compute_filtering_weights_heom(c, S_norm, γ_eff)
         else
             error("Either D (matrix) or γ (vector) required for filtering")
         end
+        log_a = log.(a)  # Precompute for fast norm calculation
     else
         a = nothing
+        log_a = nothing
     end
     
-    # BFS-based hierarchy construction
-    idx_hm = Dict{Vector{Int}, Int}()
-    ado_list = Vector{Vector{Int}}()
-    queue = Vector{Tuple{Vector{Int}, Int}}()
+    # Use optimized implementation
+    return _hierarchy_bfs_optimized(nmode, ndepth, a, log_a, tolerance, filter)
+end
+
+
+"""
+Optimized BFS hierarchy construction using NTuple keys for fast hashing.
+"""
+function _hierarchy_bfs_optimized(nmode::Int, ndepth::Int, 
+                                   a::Union{Nothing, Vector{Float64}},
+                                   log_a::Union{Nothing, Vector{Float64}},
+                                   tolerance::Real, filter::Bool)
+    # Dispatch to generated function based on nmode
+    if nmode <= 16
+        return _hierarchy_bfs_impl(Val(nmode), ndepth, a, log_a, tolerance, filter)
+    else
+        # Fallback for large nmode: use Vector keys
+        return _hierarchy_bfs_vector(nmode, ndepth, a, log_a, tolerance, filter)
+    end
+end
+
+
+"""
+Generated function for compile-time specialization on nmode.
+Uses index-based queue iteration (O(1) access) instead of popfirst! (O(n)).
+"""
+@generated function _hierarchy_bfs_impl(::Val{K}, ndepth::Int,
+                                         a::Union{Nothing, Vector{Float64}},
+                                         log_a::Union{Nothing, Vector{Float64}},
+                                         tolerance::Real, filter::Bool) where K
+    # Generate the zero tuple at compile time
+    zero_tuple = Expr(:tuple, [0 for _ in 1:K]...)
     
-    # Initialize with zero vector
-    idx_zero = zeros(Int, nmode)
-    push!(queue, (idx_zero, 1))
-    idx_hm[copy(idx_zero)] = 1
-    push!(ado_list, copy(idx_zero))
-    
-    while !isempty(queue)
-        idx, k_min = popfirst!(queue)
+    quote
+        nmode = $K
+        IdxType = NTuple{$K, Int}
         
-        for k in k_min:nmode
-            idx_child = copy(idx)
-            idx_child[k] += 1
-            depth = sum(idx_child)
+        # Estimate capacity
+        estimated_size = min(binomial(ndepth + nmode, nmode), 10_000_000)
+        idx_hm = Dict{IdxType, Int}()
+        sizehint!(idx_hm, estimated_size)
+        
+        # Flat storage for indices only
+        ado_data = Vector{Int}()
+        sizehint!(ado_data, estimated_size * $K)
+        
+        # Queue: (parent_ado_number, k_min)
+        queue = Vector{Tuple{Int, Int}}()
+        sizehint!(queue, estimated_size)
+        
+        # Precompute log-factorials
+        log_fact = filter ? _precompute_log_factorials(ndepth + 1) : Float64[]
+        
+        # Initialize with zero
+        idx_zero::IdxType = $zero_tuple
+        idx_hm[idx_zero] = 1
+        for i in 1:$K
+            push!(ado_data, 0)
+        end
+        push!(queue, (1, 1))
+        
+        # Working buffer
+        idx_buf = zeros(Int, $K)
+        nado = 1
+        queue_head = 1
+        
+        # BFS
+        while queue_head <= length(queue)
+            parent_n, k_min = queue[queue_head]
+            queue_head += 1
             
-            # Skip if already visited
-            if haskey(idx_hm, idx_child)
-                continue
+            # Read parent index
+            parent_offset = (parent_n - 1) * $K
+            @inbounds for k in 1:$K
+                idx_buf[k] = ado_data[parent_offset + k]
             end
             
-            # Depth limit
-            if depth > ndepth
-                continue
+            for k in k_min:$K
+                @inbounds idx_buf[k] += 1
+                
+                # Fast depth calculation
+                depth = 0
+                @inbounds for i in 1:$K
+                    depth += idx_buf[i]
+                end
+                
+                if depth <= ndepth
+                    idx_tuple = _vec_to_tuple(Val($K), idx_buf)
+                    
+                    if !haskey(idx_hm, idx_tuple)
+                        include_ado = true
+                        if filter
+                            include_ado = _check_norm_fast(idx_buf, log_a, log_fact, tolerance)
+                        end
+                        
+                        if include_ado
+                            nado += 1
+                            idx_hm[idx_tuple] = nado
+                            @inbounds for i in 1:$K
+                                push!(ado_data, idx_buf[i])
+                            end
+                            push!(queue, (nado, k))
+                        end
+                    end
+                end
+                
+                @inbounds idx_buf[k] -= 1
+            end
+        end
+        
+        # Convert to matrix
+        ado_idx = zeros(Int, $K, nado)
+        @inbounds for n in 1:nado
+            offset = (n - 1) * $K
+            for k in 1:$K
+                ado_idx[k, n] = ado_data[offset + k]
+            end
+        end
+        
+        # Build connections
+        idx_plus, idx_minus = _build_connections_impl(Val($K), ado_idx, idx_hm, nado)
+        
+        return nado, ado_idx, idx_plus, idx_minus
+    end
+end
+
+
+"""
+Build connections with generated function.
+"""
+@generated function _build_connections_impl(::Val{K}, ado_idx::Matrix{Int},
+                                             idx_hm::Dict, nado::Int) where K
+    quote
+        idx_plus, idx_minus = _build_connections_parallel(Val($K), ado_idx, idx_hm, nado)
+        return idx_plus, idx_minus
+    end
+end
+
+"""
+Build connections with optional parallelization.
+Separated from @generated to allow Threads.@threads.
+"""
+function _build_connections_parallel(::Val{K}, ado_idx::Matrix{Int},
+                                      idx_hm::Dict, nado::Int) where K
+    idx_plus = fill(-1, K, nado)
+    idx_minus = fill(-1, K, nado)
+    
+    # Parallelize if large enough
+    if nado > 10000 && Threads.nthreads() > 1
+        Threads.@threads for n in 1:nado
+            idx_buf = zeros(Int, K)  # Thread-local buffer
+            @inbounds for k in 1:K
+                idx_buf[k] = ado_idx[k, n]
             end
             
-            # Filtering criterion
-            include_ado = true
-            if filter && a !== nothing
-                W = _compute_hierarchy_norm(idx_child, a)
-                include_ado = W > tolerance
+            @inbounds for k in 1:K
+                # Forward
+                idx_buf[k] += 1
+                idx_tuple = _vec_to_tuple(Val(K), idx_buf)
+                idx_plus[k, n] = get(idx_hm, idx_tuple, -1)
+                idx_buf[k] -= 1
+                
+                # Backward
+                if idx_buf[k] > 0
+                    idx_buf[k] -= 1
+                    idx_tuple = _vec_to_tuple(Val(K), idx_buf)
+                    idx_minus[k, n] = get(idx_hm, idx_tuple, -1)
+                    idx_buf[k] += 1
+                end
+            end
+        end
+    else
+        idx_buf = zeros(Int, K)
+        @inbounds for n in 1:nado
+            for k in 1:K
+                idx_buf[k] = ado_idx[k, n]
             end
             
-            if include_ado
-                n_new = length(ado_list) + 1
-                idx_hm[copy(idx_child)] = n_new
-                push!(ado_list, copy(idx_child))
-                push!(queue, (idx_child, k))
+            for k in 1:K
+                # Forward
+                idx_buf[k] += 1
+                idx_tuple = _vec_to_tuple(Val(K), idx_buf)
+                idx_plus[k, n] = get(idx_hm, idx_tuple, -1)
+                idx_buf[k] -= 1
+                
+                # Backward
+                if idx_buf[k] > 0
+                    idx_buf[k] -= 1
+                    idx_tuple = _vec_to_tuple(Val(K), idx_buf)
+                    idx_minus[k, n] = get(idx_hm, idx_tuple, -1)
+                    idx_buf[k] += 1
+                end
             end
         end
     end
     
-    nado = length(ado_list)
+    return idx_plus, idx_minus
+end
+
+
+
+"""
+Fallback for nmode > 16 using Vector keys (slower but works for any size).
+Uses index-based queue iteration for O(1) access.
+"""
+function _hierarchy_bfs_vector(nmode::Int, ndepth::Int,
+                                a::Union{Nothing, Vector{Float64}},
+                                log_a::Union{Nothing, Vector{Float64}},
+                                tolerance::Real, filter::Bool)
+    estimated_size = min(binomial(ndepth + nmode, nmode), 10_000_000)
     
-    # Build arrays
-    ado_idx = zeros(Int, nmode, nado)
-    for n in 1:nado
-        ado_idx[:, n] = ado_list[n]
+    # Use UInt64 hash as key for large nmode
+    idx_hm = Dict{UInt64, Int}()
+    sizehint!(idx_hm, estimated_size)
+    
+    # Flat storage: [idx1..., idx_nmode, k_min]
+    stride = nmode + 1
+    ado_data = Vector{Int}()
+    sizehint!(ado_data, estimated_size * stride)
+    
+    log_fact = filter ? _precompute_log_factorials(ndepth + 1) : Float64[]
+    
+    # Initialize
+    idx_zero = zeros(Int, nmode)
+    h = _compute_hash(idx_zero)
+    idx_hm[h] = 1
+    append!(ado_data, idx_zero)
+    push!(ado_data, 1)  # k_min
+    
+    idx_buf = zeros(Int, nmode)
+    nado = 1
+    queue_head = 1
+    
+    while queue_head <= nado
+        offset = (queue_head - 1) * stride
+        
+        @inbounds for k in 1:nmode
+            idx_buf[k] = ado_data[offset + k]
+        end
+        @inbounds k_min = ado_data[offset + nmode + 1]
+        
+        for k in k_min:nmode
+            @inbounds idx_buf[k] += 1
+            
+            depth = 0
+            @inbounds for i in 1:nmode
+                depth += idx_buf[i]
+            end
+            
+            if depth <= ndepth
+                h = _compute_hash(idx_buf)
+                
+                if !haskey(idx_hm, h)
+                    include_ado = true
+                    if filter
+                        include_ado = _check_norm_fast(idx_buf, log_a, log_fact, tolerance)
+                    end
+                    
+                    if include_ado
+                        nado += 1
+                        idx_hm[h] = nado
+                        append!(ado_data, idx_buf)
+                        push!(ado_data, k)  # k_min
+                    end
+                end
+            end
+            
+            @inbounds idx_buf[k] -= 1
+        end
+        
+        queue_head += 1
     end
     
-    # Build connection matrices
+    # Convert to matrix
+    ado_idx = zeros(Int, nmode, nado)
+    @inbounds for n in 1:nado
+        offset = (n - 1) * stride
+        for k in 1:nmode
+            ado_idx[k, n] = ado_data[offset + k]
+        end
+    end
+    
+    # Rebuild hash map with matrix data (for connection building)
+    empty!(idx_hm)
+    @inbounds for n in 1:nado
+        h = _compute_hash(view(ado_idx, :, n))
+        idx_hm[h] = n
+    end
+    
+    # Build connections
     idx_plus = fill(-1, nmode, nado)
     idx_minus = fill(-1, nmode, nado)
+    idx_buf2 = zeros(Int, nmode)
     
-    for n in 1:nado
-        idx = ado_list[n]
+    @inbounds for n in 1:nado
         for k in 1:nmode
-            # Forward
-            idx_p = copy(idx)
-            idx_p[k] += 1
-            idx_plus[k, n] = get(idx_hm, idx_p, -1)
+            idx_buf2[k] = ado_idx[k, n]
+        end
+        
+        for k in 1:nmode
+            idx_buf2[k] += 1
+            h = _compute_hash(idx_buf2)
+            idx_plus[k, n] = get(idx_hm, h, -1)
+            idx_buf2[k] -= 1
             
-            # Backward
-            if idx[k] > 0
-                idx_m = copy(idx)
-                idx_m[k] -= 1
-                idx_minus[k, n] = get(idx_hm, idx_m, -1)
+            if idx_buf2[k] > 0
+                idx_buf2[k] -= 1
+                h = _compute_hash(idx_buf2)
+                idx_minus[k, n] = get(idx_hm, h, -1)
+                idx_buf2[k] += 1
             end
         end
     end
     
     return nado, ado_idx, idx_plus, idx_minus
+end
+
+
+"""
+Compute hash for index vector (for large nmode fallback).
+"""
+@inline function _compute_hash(idx::AbstractVector{Int})
+    h = UInt64(0)
+    @inbounds for i in eachindex(idx)
+        h = hash(idx[i], h)
+    end
+    return h
 end
 
 # Legacy interface for backward compatibility
