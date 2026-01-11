@@ -151,6 +151,180 @@ end
 
 
 # =====================================
+# HSEOM time evolution with separate bra/ket normalization
+# =====================================
+
+"""    evolve_normalized(system::HSEOMSystem, Pb0, Pk0, tspan, dt; ...) → (times, populations, ...)
+
+HSEOM time evolution with separate normalization for bra and ket.
+
+At each time step:
+1. Evolve bra and ket with their respective Liouvillians
+2. Normalize ket: |ket⟩ → |ket⟩/||ket||, accumulate N_ket *= ||ket||
+3. Normalize bra: |bra⟩ → |bra⟩/||bra||, accumulate N_bra *= ||bra||
+
+For expectation values:
+- Raw overlap of normalized states: Z̃ = ⟨b̃ra|k̃et⟩
+- True overlap: ⟨bra|ket⟩ = N_bra * N_ket * Z̃
+- Population: p_i = ⟨b̃ra|Pᵢ|k̃et⟩ / Z̃  (N factors cancel in ratio)
+
+# Arguments
+- `system::HSEOMSystem`: HSEOM system
+- `Pb0::Matrix{ComplexF64}`: Initial bra-side ADW (ndim × nadw)
+- `Pk0::Matrix{ComplexF64}`: Initial ket-side ADW (ndim × nadw)
+- `tspan::Tuple{Real,Real}`: Time range (t_start, t_end)
+- `dt::Real`: Time step
+- `parallel::Bool`: If true, use multi-threading for ADW loop (default: false)
+- `normalized::Bool`: If true, use normalized HSEOM (√n coefficients) (default: false)
+
+# Returns
+- `times`: Time points
+- `populations`: Population matrix (ndim × nsteps+1)
+- `cum_norm_ket`: Cumulative normalization factor for ket at each time
+- `cum_norm_bra`: Cumulative normalization factor for bra at each time
+- `biorth_overlap`: ⟨b̃ra|k̃et⟩ of normalized states at each time
+"""
+function evolve_normalized(system::HSEOMSystem, Pb0::Matrix{ComplexF64}, Pk0::Matrix{ComplexF64},
+                            tspan::Tuple{Real,Real}, dt::Real;
+                            parallel::Bool=false,
+                            normalized::Bool=false,
+                            callback=nothing,
+                            savefile::Union{String,Nothing}=nothing, save_interval::Int=100)
+    t_start, t_end = tspan
+    nsteps = Int(ceil((t_end - t_start) / dt))
+    ndim = system.ndim
+    nadw = system.nadw
+    
+    times = Vector{Float64}(undef, nsteps + 1)
+    populations = Matrix{Float64}(undef, ndim, nsteps + 1)
+    cum_norm_ket = Vector{Float64}(undef, nsteps + 1)
+    cum_norm_bra = Vector{Float64}(undef, nsteps + 1)
+    biorth_overlap = Vector{ComplexF64}(undef, nsteps + 1)
+    
+    # Prepare file output
+    if savefile !== nothing
+        io = open(savefile, "w")
+        print(io, "# time")
+        for i in 1:ndim
+            print(io, "\tpop_$i")
+        end
+        println(io, "\ttotal\tcum_norm_ket\tcum_norm_bra\tbiorth_overlap\ttrue_norm")
+    end
+    
+    # Initial state - copy and normalize
+    Pb = copy(Pb0)
+    Pk = copy(Pk0)
+    
+    # Initial normalization
+    norm_ket = sqrt(real(sum(abs2.(Pk))))
+    norm_bra = sqrt(real(sum(abs2.(Pb))))
+    
+    if norm_ket > 1e-15
+        Pk ./= norm_ket
+    end
+    if norm_bra > 1e-15
+        Pb ./= norm_bra
+    end
+    
+    # Initialize cumulative factors
+    N_ket = norm_ket
+    N_bra = norm_bra
+    
+    t = t_start
+    times[1] = t
+    cum_norm_ket[1] = N_ket
+    cum_norm_bra[1] = N_bra
+    
+    # Biorthogonal overlap of normalized states: Z̃ = ⟨b̃ra|k̃et⟩
+    Z_tilde = sum(Pk[i, n] * conj(Pb[i, n]) for i in 1:ndim, n in 1:nadw)
+    biorth_overlap[1] = Z_tilde
+    
+    # Calculate populations: p_i = ⟨b̃ra|Pᵢ|k̃et⟩ / Z̃
+    # (N_bra * N_ket cancels in numerator and denominator)
+    for i in 1:ndim
+        pop_i_tilde = sum(Pk[i, n] * conj(Pb[i, n]) for n in 1:nadw)
+        populations[i, 1] = real(pop_i_tilde / Z_tilde)
+    end
+    
+    if savefile !== nothing
+        total_pop = sum(populations[:, 1])
+        true_norm = N_bra * N_ket * real(Z_tilde)
+        print(io, t)
+        for i in 1:ndim
+            print(io, "\t", populations[i, 1])
+        end
+        println(io, "\t", total_pop, "\t", N_ket, "\t", N_bra, "\t", real(Z_tilde), "\t", true_norm)
+    end
+    
+    if callback !== nothing
+        callback(t, Pb, Pk, N_bra, N_ket)
+    end
+    
+    # Select Liouvillian functions
+    ket_liouvillian! = normalized ? liouville_ket_normalized! : liouville_ket!
+    bra_liouvillian! = normalized ? liouville_bra_normalized! : liouville_bra!
+    
+    # Time evolution loop
+    for step in 1:nsteps
+        # Evolve one step
+        lsrk4!(Pb, dt, bra_liouvillian!, system; parallel=parallel)
+        lsrk4!(Pk, dt, ket_liouvillian!, system; parallel=parallel)
+        
+        # Normalize ket and accumulate
+        norm_ket = sqrt(real(sum(abs2.(Pk))))
+        if norm_ket > 1e-15
+            Pk ./= norm_ket
+            N_ket *= norm_ket
+        end
+        
+        # Normalize bra and accumulate
+        norm_bra = sqrt(real(sum(abs2.(Pb))))
+        if norm_bra > 1e-15
+            Pb ./= norm_bra
+            N_bra *= norm_bra
+        end
+        
+        t += dt
+        times[step + 1] = t
+        cum_norm_ket[step + 1] = N_ket
+        cum_norm_bra[step + 1] = N_bra
+        
+        # Biorthogonal overlap of normalized states
+        Z_tilde = sum(Pk[i, n] * conj(Pb[i, n]) for i in 1:ndim, n in 1:nadw)
+        biorth_overlap[step + 1] = Z_tilde
+        
+        # Calculate populations: p_i = ⟨b̃ra|Pᵢ|k̃et⟩ / Z̃
+        for i in 1:ndim
+            pop_i_tilde = sum(Pk[i, n] * conj(Pb[i, n]) for n in 1:nadw)
+            populations[i, step + 1] = real(pop_i_tilde / Z_tilde)
+        end
+        
+        # File output at specified intervals
+        if savefile !== nothing && (step % save_interval == 0 || step == nsteps)
+            total_pop = sum(populations[:, step + 1])
+            true_norm = N_bra * N_ket * real(Z_tilde)
+            print(io, t)
+            for i in 1:ndim
+                print(io, "\t", populations[i, step + 1])
+            end
+            println(io, "\t", total_pop, "\t", N_ket, "\t", N_bra, "\t", real(Z_tilde), "\t", true_norm)
+            flush(io)
+        end
+        
+        if callback !== nothing
+            callback(t, Pb, Pk, N_bra, N_ket)
+        end
+    end
+    
+    if savefile !== nothing
+        close(io)
+    end
+    
+    return times, populations, cum_norm_ket, cum_norm_bra, biorth_overlap
+end
+
+
+# =====================================
 # HEOM time evolution (density matrix)
 # =====================================
 

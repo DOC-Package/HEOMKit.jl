@@ -42,7 +42,7 @@ export build_tridiagonal_D
 
 # evolution.jl: Time evolution
 export lsrk4!, lsrk4
-export evolve
+export evolve, evolve_normalized
 export initial_ado
 
 # Include files

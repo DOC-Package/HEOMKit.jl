@@ -80,7 +80,18 @@ end
 
 Unified noise parameters from multiple baths.
 
-Fields: `expon`, `coeff`, `abs_coeff`, `nterms`, `nbath`, `nterms_bath`, `jstart_bath`, `V`, `baths`
+# Fields
+- `expon`: Exponents γₖ
+- `coeff`: Coefficients cₖ  
+- `abs_coeff`: |cₖ|
+- `nterms`: Total number of terms
+- `nbath`: Number of baths
+- `nterms_bath`: Number of terms per bath
+- `jstart_bath`: Starting index for each bath
+- `is_conjugate`: true if term is conjugate (second half within each bath)
+- `Vbath`: Coupling operators (per bath)
+- `V`: Coupling operators (per term)
+- `baths`: List of BathExp objects
 """
 struct NoiseExp
     expon::Vector{ComplexF64}
@@ -90,8 +101,10 @@ struct NoiseExp
     nbath::Int
     nterms_bath::Vector{Int}
     jstart_bath::Vector{Int}
-    V::Vector{Matrix{ComplexF64}}     # List of interaction operators (nbath)
-    baths::Vector{BathExp}                # List of baths
+    is_conjugate::Vector{Bool}
+    Vbath::Vector{Matrix{ComplexF64}}
+    V::Vector{Matrix{ComplexF64}}
+    baths::Vector{BathExp}
 end
 
 """
@@ -180,18 +193,36 @@ function NoiseExp(baths::Vector{BathExp})
     nterms = sum(nterms_bath)
     expon = Vector{ComplexF64}(undef, nterms)
     coeff = Vector{ComplexF64}(undef, nterms)
+    is_conjugate = Vector{Bool}(undef, nterms)
     
     for (ibath, bath) in enumerate(baths)
         idx_start = jstart_bath[ibath]
         idx_end = idx_start + nterms_bath[ibath] - 1
         expon[idx_start:idx_end] = bath.expon
         coeff[idx_start:idx_end] = bath.coeff
+        
+        # Mark conjugate terms: second half of each bath
+        nterms_b = nterms_bath[ibath]
+        jmid = idx_start + nterms_b ÷ 2 - 1
+        for k in idx_start:idx_end
+            is_conjugate[k] = (k > jmid)
+        end
     end
     
     abs_coeff = abs.(coeff)
-    V = [b.V for b in baths]
+    Vbath = [b.V for b in baths]
     
-    return NoiseExp(expon, coeff, abs_coeff, nterms, nbath, nterms_bath, jstart_bath, V, baths)
+    # Expanded V: one per term
+    V = Vector{Matrix{ComplexF64}}(undef, nterms)
+    for (ibath, bath) in enumerate(baths)
+        idx_start = jstart_bath[ibath]
+        idx_end = idx_start + nterms_bath[ibath] - 1
+        for k in idx_start:idx_end
+            V[k] = bath.V
+        end
+    end
+    
+    return NoiseExp(expon, coeff, abs_coeff, nterms, nbath, nterms_bath, jstart_bath, is_conjugate, Vbath, V, baths)
 end
 
 function NoiseExp(bath::BathExp)
