@@ -45,7 +45,7 @@ V = ComplexF64[1 0; 0 -1]
 
 expon = zeros(ComplexF64, n_terms)
 coeff = c_coeffs
-bath = BathExp(expon, coeff, V; add_conjugate=false)
+bath = BathExp(expon, coeff, V)
 noise = NoiseExp(bath)
 
 phi0 = zeros(ComplexF64, n_terms)

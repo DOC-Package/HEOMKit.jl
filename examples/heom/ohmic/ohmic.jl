@@ -8,7 +8,7 @@ using CairoMakie
 # Spectral density parameters
 s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
 γ = 50.0      # Cutoff frequency [cm⁻¹]
-λ = 5.0       # Reorganization energy [cm⁻¹]
+λ = 1.0       # Reorganization energy [cm⁻¹]
 T = 300.0      # Temperature [K]
 sd = PowerLawExpSD(s, γ; reorgene=λ)
 bcf = BosonicBCF(sd, T)
@@ -16,17 +16,17 @@ bcf = BosonicBCF(sd, T)
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 500.0   # [fs]
+tmax = 3000.0   # [fs]
 nsamples = 500
 eps = 1e-3     # ESPRIT tolerance
 # Time evolution parameters
-t_end = 500.0    # [fs]
+t_end = 3000.0    # [fs]
 dt_evolve = 0.5  # [fs]
 
 # System Hamiltonian (two-level system)
 ε = 0.0      # Energy difference [cm⁻¹]
 Δ = 20.0    # Tunneling coupling [cm⁻¹]
-H = [ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
+H = [-ε/2 -Δ/2; -Δ/2 ε/2] * icm2ifs  # Convert to [1/fs]
 
 dt = (tmax - tmin) / (nsamples - 1)
 t_samples = range(tmin, tmax, length=nsamples)
@@ -50,7 +50,7 @@ end
 expon = ef.expon
 coeff = ef.coeff
 V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = BathExp(expon, coeff, V; add_conjugate=true)
+bath = BathExp(expon, coeff, V)
 noise = NoiseExp(bath)
 
 println("\nSystem Hamiltonian:")

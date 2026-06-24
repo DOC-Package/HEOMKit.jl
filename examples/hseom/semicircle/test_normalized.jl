@@ -147,7 +147,7 @@ println("  ESPRIT fitting: $(length(ef.expon)) exponential terms")
 
 # Build HEOM system
 V_heom = ComplexF64[1 0; 0 -1]
-bath_heom = BathExp(ef.expon, ef.coeff, V_heom; add_conjugate=true)
+bath_heom = BathExp(ef.expon, ef.coeff, V_heom)
 noise_heom = NoiseExp(bath_heom)
 
 ndepth_heom = 8

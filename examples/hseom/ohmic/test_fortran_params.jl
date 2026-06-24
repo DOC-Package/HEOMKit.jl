@@ -88,7 +88,7 @@ display(D_matrix)
 expon = zeros(ComplexF64, Jmax)  # D 行列で時間発展を扱うので使わない
 coeff = ck
 
-bath = BathExp(expon, coeff, V; add_conjugate=false)
+bath = BathExp(expon, coeff, V)
 noise = NoiseExp(bath)
 
 # HSEOM システム

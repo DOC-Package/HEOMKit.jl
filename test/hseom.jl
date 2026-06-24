@@ -13,10 +13,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
-        # ノイズパラメータ
+        # ノイズパラメータ (complex without pair → will be expanded to 2 modes)
         expon = ComplexF64[0.01 + 0.001im]
         coeff = ComplexF64[0.001 + 0.0001im]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         # HSEOMシステム構築
@@ -52,9 +52,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
+        # Real exponent → 1 mode (no expansion)
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
@@ -87,9 +88,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
+        # Real exponent → 1 mode
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
@@ -122,9 +124,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
+        # Real exponent → 1 mode
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)
@@ -154,10 +157,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
-        # 3つのモードを持つ熱浴
+        # 3つのモードを持つ熱浴 (real exponents → no expansion)
         expon = ComplexF64[0.01, 0.02, 0.03]
         coeff = ComplexF64[0.001, 0.002, 0.003]
-        bath = BathExp(expon, coeff, V; add_conjugate=false)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         # 一般の D 行列（ここでは三重対角）
@@ -188,9 +191,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
+        # Real exponent → 1 mode
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         ndepth = 3
@@ -231,9 +235,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
+        # Complex without pair → expanded to 2 modes
         expon = ComplexF64[0.01 + 0.001im]
         coeff = ComplexF64[0.001 + 0.0001im]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         # HSEOM システム
@@ -273,9 +278,10 @@ using Test
         H = ComplexF64[0 100; 100 0] * icm2ifs
         V = ComplexF64[1 0; 0 -1]
         
+        # Real exponent → 1 mode
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)

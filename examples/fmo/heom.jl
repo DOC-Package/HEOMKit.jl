@@ -1,32 +1,35 @@
 using KaisouEOM
 using KaisouEOM: icm2ifs, kB
 using QFiND
+using RationalFunctionApproximation
+using Serialization
 using ExpFit
 using LinearAlgebra
 using CairoMakie
 
-# Spectral density parameters
-s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
-γ = 50.0      # Cutoff frequency [cm⁻¹]
-λ = 1.0       # Reorganization energy [cm⁻¹]
-T = 300.0      # Temperature [K]
-sd = SemicircleSD(s, γ, λ)
-bcf = BosonicBCF(sd, T)
-
+Temp = 300.0
+ub = 500.0
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 1000.0   # [fs]
-nsamples = 500
-eps = 1e-3     # ESPRIT tolerance
+tmax = 750.0   # [fs]
+nsamples = 1000
+eps = 2e-1     # ESPRIT tolerance
 # Time evolution parameters
-t_end = 1000.0    # [fs]
+t_end = 500.0    # [fs]
 dt_evolve = 0.5  # [fs]
 
-# System Hamiltonian (two-level system)
-ε = 0.0      # Energy difference [cm⁻¹]
-Δ = 20.0    # Tunneling coupling [cm⁻¹]
-H = [ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
+r = open("r_fmo.bin", "r") do io
+    deserialize(io)
+end
+
+E_reorg = 35.0
+sdens = AAAfittedSD(r, E_reorg)
+println("Reorganization energy: ", sdens.reorgene)
+bcf = BosonicBCF(sdens, Temp; ub=ub)
+
+# System Hamiltonian
+H = [310 -97.9 5.5; -97.9 230 30.1; 5.5 30.1 0] * icm2ifs  # Convert to [1/fs]
 
 dt = (tmax - tmin) / (nsamples - 1)
 t_samples = range(tmin, tmax, length=nsamples)
@@ -49,17 +52,24 @@ end
 # Bath construction from ESPRIT results
 expon = ef.expon
 coeff = ef.coeff
-V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = BathExp(expon, coeff, V)
-noise = NoiseExp(bath)
+V1 = ComplexF64[1 0 0; 0 0 0; 0 0 0]  
+V2 = ComplexF64[0 0 0; 0 1 0; 0 0 0] 
+V3 = ComplexF64[0 0 0; 0 0 0; 0 0 1]
+
+bath1 = BathExp(expon, coeff, V1)
+bath2 = BathExp(expon, coeff, V2)
+bath3 = BathExp(expon, coeff, V3)
+noise = NoiseExp([bath1, bath2, bath3])
 
 println("\nSystem Hamiltonian:")
-println("  Energy difference ε = $ε cm⁻¹")
-println("  Tunneling coupling Δ = $Δ cm⁻¹")
 
 # HEOM system
-ndepth = 8
-system = HEOMSystem(H, noise, ndepth; hierarchy=:depth)
+ndepth = 5
+system = HEOMSystem(H, noise, ndepth;
+    hierarchy=:width,
+    tolerance=1e-6,
+    filter=true,
+)
 println("\nHEOM System:")
 println("  Hierarchy depth: $ndepth")
 println("  Number of ADOs: $(system.nado)")
@@ -77,7 +87,7 @@ println("\nRunning HEOM dynamics...")
 times, pops = evolve(system, P0, (0.0, t_end), dt_evolve; parallel=true, savefile="pop_heom.dat", save_interval=10)
 
 println("  Done!")
-println("  Final populations: ρ₁₁ = $(pops[1,end]), ρ₂₂ = $(pops[2,end])")
+println("  Final populations: ρ₁₁ = $(pops[1,end]), ρ₂₂ = $(pops[2,end]), ρ₃₃ = $(pops[3,end])")
 
 # =============================================
 # 5. Visualization
@@ -95,10 +105,11 @@ fig1 = Figure(size=(800, 500))
 ax1 = Axis(fig1[1, 1],
     xlabel = "Time [fs]",
     ylabel = "Population",
-    title = "Two-Level System with Ohmic Bath\n(λ=$λ cm⁻¹, γ=$γ cm⁻¹, T=$T K)"
+    title = "FMO Complex with a Structured Bath"
 )
 lines!(ax1, times, real.(pops[1, :]), linewidth=2, label="ρ₁₁", color=:blue)
 lines!(ax1, times, real.(pops[2, :]), linewidth=2, label="ρ₂₂", color=:red)
+lines!(ax1, times, real.(pops[3, :]), linewidth=2, label="ρ₃₃", color=:green)
 axislegend(ax1, position=:rt)
 save(joinpath(outdir, "population_ohmic.png"), fig1)
 println("  Saved: $(joinpath(outdir, "population_ohmic.png"))")

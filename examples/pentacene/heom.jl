@@ -1,32 +1,36 @@
 using KaisouEOM
 using KaisouEOM: icm2ifs, kB
 using QFiND
+using RationalFunctionApproximation
+using Serialization
 using ExpFit
 using LinearAlgebra
 using CairoMakie
 
-# Spectral density parameters
-s = 1.0        # Ohmic (s=1), sub-Ohmic (s<1), super-Ohmic (s>1)
-γ = 50.0      # Cutoff frequency [cm⁻¹]
-λ = 1.0       # Reorganization energy [cm⁻¹]
-T = 300.0      # Temperature [K]
-sd = SemicircleSD(s, γ, λ)
-bcf = BosonicBCF(sd, T)
-
+Temp = 300.0
+ub = 2000.0
 # ESPRIT Fitting of Bath Correlation Function
 # Sampling parameters
 tmin = 0.0
-tmax = 1000.0   # [fs]
-nsamples = 500
-eps = 1e-3     # ESPRIT tolerance
+tmax = 500.0   # [fs]
+nsamples = 1000
+eps = 1e-1     # ESPRIT tolerance
 # Time evolution parameters
-t_end = 1000.0    # [fs]
+t_end = 500.0    # [fs]
 dt_evolve = 0.5  # [fs]
 
+r = open("r_pen.bin", "r") do io
+    deserialize(io)
+end
+
+E_reorg = 500.0
+sdens = AAAfittedSD(r, E_reorg)
+println("Reorganization energy: ", sdens.reorgene)
+bcf = BosonicBCF(sdens, Temp; ub=ub)
+
 # System Hamiltonian (two-level system)
-ε = 0.0      # Energy difference [cm⁻¹]
-Δ = 20.0    # Tunneling coupling [cm⁻¹]
-H = [ε/2 Δ; Δ -ε/2] * icm2ifs  # Convert to [1/fs]
+V = 400.0    # Tunneling coupling [cm⁻¹]
+H = [0.0 -V; -V 0.0] * icm2ifs  # Convert to [1/fs]
 
 dt = (tmax - tmin) / (nsamples - 1)
 t_samples = range(tmin, tmax, length=nsamples)
@@ -49,17 +53,22 @@ end
 # Bath construction from ESPRIT results
 expon = ef.expon
 coeff = ef.coeff
-V = ComplexF64[1 0; 0 -1]  # σz coupling
-bath = BathExp(expon, coeff, V)
-noise = NoiseExp(bath)
+V1 = ComplexF64[1 0; 0 0]  # σz coupling
+V2 = ComplexF64[0 0; 0 1]  # σz coupling
+bath1 = BathExp(expon, coeff, V1)
+bath2 = BathExp(expon, coeff, V2)
+noise = NoiseExp([bath1, bath2])
 
 println("\nSystem Hamiltonian:")
-println("  Energy difference ε = $ε cm⁻¹")
-println("  Tunneling coupling Δ = $Δ cm⁻¹")
+println("  Transfer Integral V = $V cm⁻¹")
 
 # HEOM system
-ndepth = 8
-system = HEOMSystem(H, noise, ndepth; hierarchy=:depth)
+ndepth = 5
+system = HEOMSystem(H, noise, ndepth;
+    hierarchy=:width,
+    tolerance=1e-5,
+    filter=true,
+)
 println("\nHEOM System:")
 println("  Hierarchy depth: $ndepth")
 println("  Number of ADOs: $(system.nado)")
@@ -95,7 +104,7 @@ fig1 = Figure(size=(800, 500))
 ax1 = Axis(fig1[1, 1],
     xlabel = "Time [fs]",
     ylabel = "Population",
-    title = "Two-Level System with Ohmic Bath\n(λ=$λ cm⁻¹, γ=$γ cm⁻¹, T=$T K)"
+    title = "Donor-Acceptor System with a Structured Bath"
 )
 lines!(ax1, times, real.(pops[1, :]), linewidth=2, label="ρ₁₁", color=:blue)
 lines!(ax1, times, real.(pops[2, :]), linewidth=2, label="ρ₂₂", color=:red)

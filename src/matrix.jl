@@ -120,13 +120,20 @@ abstract type AbstractHEOMMatrices end
 """
     HEOMMatrices{M<:AbstractMatrix{ComplexF64}}
 
-Liouville space matrices for HEOM: `Ls`, `Vx`, `Vo`, `Vl`, `Vr`, `ndim`, `ndim2`.
-Parametric type M can be SparseMat or DenseMat.
+Liouville space matrices for HEOM.
+All V operators are stored per-mode (length = nterms).
+
+# Fields
+- `Ls`: System Liouvillian -i[H,·]
+- `Vx`: [V,·] per mode
+- `Vl`: V· per mode  
+- `Vr`: ·V† per mode
+- `ndim`: System dimension
+- `ndim2`: Liouville dimension (ndim²)
 """
 struct HEOMMatrices{M<:AbstractMatrix{ComplexF64}} <: AbstractHEOMMatrices
     Ls::M
     Vx::Vector{M}
-    Vo::Vector{M}
     Vl::Vector{M}
     Vr::Vector{M}
     ndim::Int
@@ -140,51 +147,48 @@ const DenseHEOMMatrices = HEOMMatrices{DenseMat}
 """    HEOMMatrices(H, noise; sparse=true)
 
 Construct HEOM matrices from Hamiltonian and Noise.
+V operators are built per-mode (length = nterms).
 
 # Arguments
 - `H`: System Hamiltonian
-- `noise`: Noise structure
+- `noise`: Noise structure  
 - `sparse`: If true (default), use sparse matrices. If false, use dense matrices.
 """
 function HEOMMatrices(H::AbstractMatrix, noise::NoiseExp; sparse::Bool=true)
     ndim = size(H, 1)
     ndim2 = ndim^2
-    nbath = noise.nbath
+    nterms = noise.nterms
     
     if sparse
         # Sparse matrix version
         Ls = -1.0im * matx_sparse(ComplexF64.(H))
-        Vx = Vector{SparseMat}(undef, nbath)
-        Vo = Vector{SparseMat}(undef, nbath)
-        Vl = Vector{SparseMat}(undef, nbath)
-        Vr = Vector{SparseMat}(undef, nbath)
+        Vx = Vector{SparseMat}(undef, nterms)
+        Vl = Vector{SparseMat}(undef, nterms)
+        Vr = Vector{SparseMat}(undef, nterms)
         
-        for ibath in 1:nbath
-            V = noise.V[ibath]
-            Vx[ibath] = matx_sparse(V)
-            Vo[ibath] = mato_sparse(V)
-            Vl[ibath] = matl_sparse(V)
-            Vr[ibath] = matr_sparse(V)
+        for j in 1:nterms
+            V = noise.V[j]
+            Vx[j] = matx_sparse(V)
+            Vl[j] = matl_sparse(V)
+            Vr[j] = matr_sparse(V)
         end
         
-        return HEOMMatrices{SparseMat}(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
+        return HEOMMatrices{SparseMat}(Ls, Vx, Vl, Vr, ndim, ndim2)
     else
         # Dense matrix version
         Ls = -1.0im * matx_dense(ComplexF64.(H))
-        Vx = Vector{DenseMat}(undef, nbath)
-        Vo = Vector{DenseMat}(undef, nbath)
-        Vl = Vector{DenseMat}(undef, nbath)
-        Vr = Vector{DenseMat}(undef, nbath)
+        Vx = Vector{DenseMat}(undef, nterms)
+        Vl = Vector{DenseMat}(undef, nterms)
+        Vr = Vector{DenseMat}(undef, nterms)
         
-        for ibath in 1:nbath
-            V = noise.V[ibath]
-            Vx[ibath] = matx_dense(V)
-            Vo[ibath] = mato_dense(V)
-            Vl[ibath] = matl_dense(V)
-            Vr[ibath] = matr_dense(V)
+        for j in 1:nterms
+            V = noise.V[j]
+            Vx[j] = matx_dense(V)
+            Vl[j] = matl_dense(V)
+            Vr[j] = matr_dense(V)
         end
         
-        return HEOMMatrices{DenseMat}(Ls, Vx, Vo, Vl, Vr, ndim, ndim2)
+        return HEOMMatrices{DenseMat}(Ls, Vx, Vl, Vr, ndim, ndim2)
     end
 end
 
@@ -194,24 +198,24 @@ end
 # =====================================
 
 function Base.show(io::IO, m::HEOMMatrices{SparseMat})
-    print(io, "HEOMMatrices{Sparse}(ndim=$(m.ndim), nbath=$(length(m.Vx)))")
+    print(io, "HEOMMatrices{Sparse}(ndim=$(m.ndim), nterms=$(length(m.Vx)))")
 end
 
 function Base.show(io::IO, m::HEOMMatrices{DenseMat})
-    print(io, "HEOMMatrices{Dense}(ndim=$(m.ndim), nbath=$(length(m.Vx)))")
+    print(io, "HEOMMatrices{Dense}(ndim=$(m.ndim), nterms=$(length(m.Vx)))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::HEOMMatrices{SparseMat})
     println(io, "HEOMMatrices (Sparse):")
     println(io, "  System dimension ndim = $(m.ndim)")
     println(io, "  Liouville dimension ndim² = $(m.ndim2)")
-    println(io, "  Number of baths = $(length(m.Vx))")
+    println(io, "  Number of terms = $(length(m.Vx))")
 end
 
 function Base.show(io::IO, ::MIME"text/plain", m::HEOMMatrices{DenseMat})
     println(io, "HEOMMatrices (Dense):")
     println(io, "  System dimension ndim = $(m.ndim)")
     println(io, "  Liouville dimension ndim² = $(m.ndim2)")
-    println(io, "  Number of baths = $(length(m.Vx))")
+    println(io, "  Number of terms = $(length(m.Vx))")
 end
 

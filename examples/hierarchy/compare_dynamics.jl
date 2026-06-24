@@ -54,7 +54,7 @@ end
 V = ComplexF64[0 1; 1 0]
 
 # Create bath and noise
-bath = BathExp(γ_list, c_list, V; add_conjugate=true)
+bath = BathExp(γ_list, c_list, V)
 noise = NoiseExp([bath])
 
 nmode = noise.nterms

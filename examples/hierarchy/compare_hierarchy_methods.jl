@@ -211,7 +211,7 @@ println()
 
 # Create NoiseExp
 println("NoiseExp interface:")
-bath_exp = BathExp(γ_list, c_list, V; add_conjugate=true)
+bath_exp = BathExp(γ_list, c_list, V)
 noise_exp = NoiseExp([bath_exp])
 
 nado_exp_full, _, _, _ = hierarchy_index_width(noise_exp, 8; filter=false)

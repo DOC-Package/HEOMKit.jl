@@ -573,8 +573,8 @@ function hierarchy_index_width(noise::NoiseExp, ndepth::Int;
     
     if filter
         # Extract parameters for filtering
-        γ = real.(noise.expon)  # Decay rates
-        c = noise.coeff         # BCF coefficients
+        γ = real.(noise.γ)      # Decay rates
+        c = noise.c1 .+ noise.c2  # Effective BCF coefficients
         
         # Compute S_norm from interaction operators if not provided
         if S_norm === nothing

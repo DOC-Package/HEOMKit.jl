@@ -123,7 +123,7 @@ V = ComplexF64[1 0; 0 -1]
 expon = zeros(ComplexF64, n_terms)  # Placeholder (D matrix will be used instead)
 coeff = c_coeffs  # Chebyshev expansion coefficients
 
-bath = BathExp(expon, coeff, V; add_conjugate=false)  # No conjugate for Chebyshev
+bath = BathExp(expon, coeff, V)  # No conjugate for Chebyshev
 noise = NoiseExp(bath)
 
 # φₖ(0) for Bessel expansion: Jₖ(0) = δₖ₀ (1 for k=0, 0 otherwise)

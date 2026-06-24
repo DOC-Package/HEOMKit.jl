@@ -106,4 +106,19 @@ using Test
         println("width nado: ", nado_w)
         println("Index sets match: ", set_d == set_w)
     end
+
+    @testset "HEOMSystem width filtering API" begin
+        H = ComplexF64[0 0; 0 1]
+        expon = ComplexF64[1.0, 2.0]
+        coeff = ComplexF64[1e-2, 1e-6]
+        V = ComplexF64[1 0; 0 0]
+        noise = NoiseExp([BathExp(expon, coeff, V)])
+
+        system_unfiltered = HEOMSystem(H, noise, 4; hierarchy=:width)
+        system_filtered = HEOMSystem(H, noise, 4;
+            hierarchy=:width, tolerance=1e-3, filter=true)
+
+        @test system_filtered.nado > 0
+        @test system_filtered.nado < system_unfiltered.nado
+    end
 end

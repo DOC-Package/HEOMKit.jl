@@ -1,14 +1,4 @@
 """
-    HEOM module
-
-Define HEOM structures and Liouville operator.
-"""
-
-# =====================================
-# HEOM operators structure
-# =====================================
-
-"""
     HEOMOperators
 
 HEOM connection coefficients: `ngamma`, `phi`, `theta_l`, `theta_r`.
@@ -31,7 +21,7 @@ function HEOMOperators(noise::NoiseExp, ado_idx::Matrix{Int}, nado::Int)
     # ngamma: Σₖ nₖ γₖ
     ngamma = Vector{ComplexF64}(undef, nado)
     for n in 1:nado
-        ngamma[n] = sum(ado_idx[j, n] * noise.expon[j] for j in 1:nterms)
+        ngamma[n] = sum(ado_idx[j, n] * noise.γ[j] for j in 1:nterms)
     end
     
     # phi: √((nₖ+1)|cₖ|)
@@ -42,28 +32,17 @@ function HEOMOperators(noise::NoiseExp, ado_idx::Matrix{Int}, nado::Int)
         end
     end
     
-    # theta_l, theta_r: separate first half / second half within each bath
+    # theta_l, theta_r: use c1 and c2 directly
+    # theta_l corresponds to c1 (left action), theta_r to c2 (right action)
     theta_l = zeros(ComplexF64, nterms, nado)
     theta_r = zeros(ComplexF64, nterms, nado)
     
     for n in 1:nado
-        for ibath in 1:nbath
-            jstart = noise.jstart_bath[ibath]
-            nterms_b = noise.nterms_bath[ibath]
-            jmid = jstart + nterms_b ÷ 2 - 1
-            jend = jstart + nterms_b - 1
-            
-            # First half (original data)
-            for j in jstart:jmid
-                if ado_idx[j, n] > 0 && noise.abs_coeff[j] > 0
-                    theta_l[j, n] = sqrt(ado_idx[j, n] / noise.abs_coeff[j]) * noise.coeff[j]
-                end
-            end
-            # Second half (complex conjugate data)
-            for j in (jmid + 1):jend
-                if ado_idx[j, n] > 0 && noise.abs_coeff[j] > 0
-                    theta_r[j, n] = -sqrt(ado_idx[j, n] / noise.abs_coeff[j]) * noise.coeff[j]
-                end
+        for j in 1:nterms
+            if ado_idx[j, n] > 0 && noise.abs_coeff[j] > 0
+                factor = sqrt(ado_idx[j, n] / noise.abs_coeff[j])
+                theta_l[j, n] = factor * noise.c1[j]
+                theta_r[j, n] = -factor * noise.c2[j]
             end
         end
     end
@@ -100,7 +79,7 @@ end
 const SparseHEOMSystem = HEOMSystem{SparseMatrixCSC{ComplexF64, Int}}
 const DenseHEOMSystem = HEOMSystem{Matrix{ComplexF64}}
 
-"""    HEOMSystem(H, noise, ndepth; hierarchy=:depth, sparse=true)
+"""    HEOMSystem(H, noise, ndepth; hierarchy=:depth, sparse=true, tolerance=1e-6, filter=false)
 
 Construct HEOM system. 
 
@@ -110,9 +89,12 @@ Construct HEOM system.
 - `ndepth`: Hierarchy depth
 - `hierarchy`: Hierarchy construction method, `:depth` or `:width`
 - `sparse`: If true (default), use sparse matrices. If false, use dense matrices.
+- `tolerance`: Filtering threshold used when `hierarchy=:width` and `filter=true`
+- `filter`: Enable width-based filtering when `hierarchy=:width`
 """
 function HEOMSystem(H::AbstractMatrix, noise::NoiseExp, ndepth::Int;
-                    hierarchy::Symbol=:depth, sparse::Bool=true)
+                    hierarchy::Symbol=:depth, sparse::Bool=true,
+                    tolerance::Real=1e-6, filter::Bool=false)
     # Construct matrices
     matrices = HEOMMatrices(H, noise; sparse=sparse)
     
@@ -121,10 +103,9 @@ function HEOMSystem(H::AbstractMatrix, noise::NoiseExp, ndepth::Int;
     if hierarchy == :depth
         nado, ado_idx, idx_plus, idx_minus = hierarchy_index_depth(nterms, ndepth)
     elseif hierarchy == :width
-        bk, ak, _ = compute_heom_params(noise)
         nado, ado_idx, idx_plus, idx_minus = hierarchy_index_width(
-            nterms, ndepth, noise.expon, noise.coeff, bk;
-            ak=ak, filter=false
+            noise, ndepth;
+            tolerance=tolerance, filter=filter
         )
     else
         error("Unknown method: $method. Use :depth or :width")
@@ -151,22 +132,22 @@ Apply HEOM Liouvillian to P (in-place).
 """
 function liouville!(dP::Matrix{ComplexF64}, P::Matrix{ComplexF64}, system::HEOMSystem;
                     parallel::Bool=false)
-    (; matrices, operators, noise, ado_idx, idx_plus, idx_minus, nado, ndim2) = system
+    (; matrices, operators, noise, idx_plus, idx_minus, nado, ndim2) = system
     (; Ls, Vx, Vl, Vr) = matrices
     (; ngamma, phi, theta_l, theta_r) = operators
-    nbath = noise.nbath
+    nterms = noise.nterms
     
     dP .= 0.0 + 0.0im
     
     if parallel
         Threads.@threads for n in 1:nado
             _liouville_ado!(dP, P, n, Ls, Vx, Vl, Vr, ngamma, phi, theta_l, theta_r,
-                           noise, idx_plus, idx_minus, ndim2)
+                           idx_plus, idx_minus, nterms, ndim2)
         end
     else
         @inbounds for n in 1:nado
             _liouville_ado!(dP, P, n, Ls, Vx, Vl, Vr, ngamma, phi, theta_l, theta_r,
-                           noise, idx_plus, idx_minus, ndim2)
+                           idx_plus, idx_minus, nterms, ndim2)
         end
     end
     
@@ -175,49 +156,29 @@ end
 
 """Internal function for single ADO Liouvillian computation."""
 @inline function _liouville_ado!(dP, P, n, Ls, Vx, Vl, Vr, ngamma, phi, theta_l, theta_r,
-                                 noise, idx_plus, idx_minus, ndim2)
-    nbath = noise.nbath
-    
+                                 idx_plus, idx_minus, nterms, ndim2)
     # System term: -i[H, ρₙ]
     @views mul!(dP[:, n], Ls, P[:, n], 1.0, 1.0)
     
     # Damping term: -Σₖ nₖγₖ ρₙ
     @views dP[:, n] .-= ngamma[n] .* P[:, n]
     
-    # 各熱浴について処理
-    @inbounds for ibath in 1:nbath
-        jstart = noise.jstart_bath[ibath]
-        nterms_b = noise.nterms_bath[ibath]
-        jmid = jstart + nterms_b ÷ 2 - 1
-        jend = jstart + nterms_b - 1
+    # Mode-by-mode processing (no bath loop needed)
+    @inbounds for j in 1:nterms
+        # phi term (forward connection): -i √((nₖ+1)|cₖ|) [V, ρₙ₊₁ₖ]
+        np = idx_plus[j, n]
+        if np > 0
+            @views mul!(dP[:, n], Vx[j], P[:, np], -1.0im * phi[j, n], 1.0)
+        end
         
-        # phi 項（前進接続）
-        PTMPx = zeros(ComplexF64, ndim2)
-        for j in jstart:jend
-            np = idx_plus[j, n]
-            if np > 0
-                @views PTMPx .+= phi[j, n] .* P[:, np]
-            end
+        # theta terms (backward connection)
+        # theta_l: c1 contribution (left action Vρ)
+        # theta_r: c2 contribution (right action ρV†)
+        nm = idx_minus[j, n]
+        if nm > 0
+            @views mul!(dP[:, n], Vl[j], P[:, nm], -1.0im * theta_l[j, n], 1.0)
+            @views mul!(dP[:, n], Vr[j], P[:, nm], -1.0im * theta_r[j, n], 1.0)
         end
-        @views mul!(dP[:, n], Vx[ibath], PTMPx, -1.0im, 1.0)
-        
-        # theta 項（後退接続）
-        PTMPl = zeros(ComplexF64, ndim2)
-        PTMPr = zeros(ComplexF64, ndim2)
-        for j in jstart:jmid
-            nm = idx_minus[j, n]
-            if nm > 0
-                @views PTMPl .+= theta_l[j, n] .* P[:, nm]
-            end
-        end
-        for j in (jmid + 1):jend
-            nm = idx_minus[j, n]
-            if nm > 0
-                @views PTMPr .+= theta_r[j, n] .* P[:, nm]
-            end
-        end
-        @views mul!(dP[:, n], Vl[ibath], PTMPl, -1.0im, 1.0)
-        @views mul!(dP[:, n], Vr[ibath], PTMPr, -1.0im, 1.0)
     end
     
     return nothing

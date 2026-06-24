@@ -52,8 +52,14 @@ system = HEOMSystem(H, noise, 5; hierarchy=:depth)
 Filter ADOs based on importance criteria:
 
 ```julia
-system = HEOMSystem(H, noise, 5; hierarchy=:width)
+system = HEOMSystem(H, noise, 5;
+	hierarchy=:width,
+	tolerance=1e-5,
+	filter=true,
+)
 ```
+
+Set `filter=false` to keep the full width-based hierarchy up to `ndepth`.
 
 ## Liouville Operator
 

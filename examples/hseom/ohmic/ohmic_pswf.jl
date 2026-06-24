@@ -131,7 +131,7 @@ V = ComplexF64[1 0; 0 -1]
 expon = zeros(ComplexF64, n_terms)  # Placeholder (D matrix will be used instead)
 coeff = c_coeffs  # PSWF expansion coefficients
 
-bath = BathExp(expon, coeff, V; add_conjugate=false)  # No conjugate for PSWF
+bath = BathExp(expon, coeff, V)  # No conjugate for PSWF
 noise = NoiseExp(bath)
 
 # φₖ(0) for PSWF expansion: evaluate basis functions at t=0
