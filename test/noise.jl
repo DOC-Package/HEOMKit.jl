@@ -101,7 +101,9 @@ using Test
         # BCF decomposition that already contains conjugate pairs
         # expon[1] = 1.0 + 0.5im, expon[2] = 1.0 - 0.5im (conjugate pair)
         expon = ComplexF64[1.0 + 0.5im, 1.0 - 0.5im]
-        coeff = ComplexF64[0.3 + 0.2im, 0.3 - 0.2im]  # coeff[2] = conj(coeff[1])
+        # Deliberately unequal coefficients distinguish the two sides of the
+        # finite-temperature correlation function.
+        coeff = ComplexF64[0.3 + 0.2im, 0.07 - 0.04im]
         V = ComplexF64[0 1; 1 0]
         
         bath = BathExp(expon, coeff, V)
@@ -109,19 +111,25 @@ using Test
         
         @test noise.nterms == 2  # No expansion, pair already exists
         
-        # For conjugate pair (γa, γb=γa*) with (ca, cb):
-        # γa (positive imag) gets: c1 = ca + cb*, c2 = ca* + cb
-        # γb (negative imag) gets: c1 = cb + ca*, c2 = cb* + ca
+        # c1 reconstructs C(t), while c2 reconstructs C(t)* after matching
+        # each exponent with the coefficient of its conjugate exponent.
         ca, cb = coeff[1], coeff[2]
         γa, γb = expon[1], expon[2]
         
         # Positive imag first
         @test noise.γ[1] == γa  # 1.0 + 0.5im
         @test noise.γ[2] == γb  # 1.0 - 0.5im
-        @test noise.c1[1] ≈ ca + conj(cb)
-        @test noise.c2[1] ≈ conj(ca) + cb
-        @test noise.c1[2] ≈ cb + conj(ca)
-        @test noise.c2[2] ≈ conj(cb) + ca
+        @test noise.c1 == ComplexF64[ca, cb]
+        @test noise.c2 == ComplexF64[conj(cb), conj(ca)]
+        @test noise.abs_coeff ≈ abs.(noise.c1 .+ noise.c2)
+
+        for time in (0.0, 0.37, 1.1)
+            correlation = sum(coeff .* exp.(-expon .* time))
+            reconstructed_c1 = sum(noise.c1 .* exp.(-noise.γ .* time))
+            reconstructed_c2 = sum(noise.c2 .* exp.(-noise.γ .* time))
+            @test reconstructed_c1 ≈ correlation
+            @test reconstructed_c2 ≈ conj(correlation)
+        end
         
         println("\n=== c1_c2 for conjugate pair ===")
         println("γ = $(noise.γ)")

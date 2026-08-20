@@ -116,8 +116,8 @@ Expand BCF parameters to include conjugate modes, computing c1 and c2.
 For each exponent:
 - Real (imag ≈ 0): not doubled, c1 = c, c2 = c*
 - Complex with conjugate pair (γa, γb=γa*) with coeffs (ca, cb):
-  For γa: c1 = ca + cb*, c2 = ca* + cb
-  For γb: c1 = cb + ca*, c2 = cb* + ca
+  For γa: c1 = ca, c2 = cb*
+  For γb: c1 = cb, c2 = ca*
 - Complex without conjugate pair: add conj(γ), original gets c1=c, c2=0, conjugate gets c1=0, c2=c*
 
 Output is sorted by |c1+c2|/Re(γ) descending, with conjugate pairs adjacent.
@@ -170,10 +170,10 @@ function _expand_bcf_with_conjugate(expon::Vector{ComplexF64}, coeff::Vector{Com
             processed[j] && continue  # already processed as part of pair
             
             c_p1, c_p2 = coeff[i], coeff[j]
-            c1_i = c_p1 + conj(c_p2)
-            c2_i = conj(c_p1) + c_p2
-            c1_j = c_p2 + conj(c_p1)
-            c2_j = conj(c_p2) + c_p1
+            c1_i = c_p1
+            c2_i = conj(c_p2)
+            c1_j = c_p2
+            c2_j = conj(c_p1)
             
             # Sort key based on the one with positive imaginary part
             if imag(expon[i]) >= 0
