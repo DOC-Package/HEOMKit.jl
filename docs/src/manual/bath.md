@@ -12,7 +12,7 @@ where ``\gamma_k`` are the exponential decay rates and ``c_k`` are the expansion
 
 ## Bath Structure
 
-The `Bath` structure holds the expansion parameters for a single bath:
+The `BathExp` structure holds the expansion parameters for a single bath:
 
 ```julia
 # Direct construction with exponential parameters
@@ -20,23 +20,23 @@ The `Bath` structure holds the expansion parameters for a single bath:
 c = [0.001 + 0.0001im, 0.0005 - 0.0001im]
 V = [1.0 0.0; 0.0 -1.0]  # System-bath coupling operator
 
-bath = Bath(γ, c, V; add_conjugate=true)
+bath = BathExp(γ, c, V)
 ```
 
-When `add_conjugate=true` (default), complex conjugate pairs are automatically added to ensure real-valued correlation functions.
+`BathExp` stores the original exponential expansion. Missing complex-conjugate modes are added later when you build `NoiseExp`.
 
 ## Noise Structure
 
-The `Noise` structure combines multiple baths:
+The `NoiseExp` structure combines multiple baths:
 
 ```julia
 # Single bath
-noise = Noise(bath)
+noise = NoiseExp(bath)
 
 # Multiple baths
-bath1 = Bath(γ1, c1, V1)
-bath2 = Bath(γ2, c2, V2)
-noise = Noise([bath1, bath2])
+bath1 = BathExp(γ1, c1, V1)
+bath2 = BathExp(γ2, c2, V2)
+noise = NoiseExp([bath1, bath2])
 ```
 
 ## Spectral Densities

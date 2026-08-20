@@ -18,6 +18,7 @@ makedocs(;
             "Bath and Noise" => "manual/bath.md",
             "HEOM System" => "manual/heom.md",
             "Time Evolution" => "manual/evolution.md",
+            "Performance" => "manual/performance.md",
             "Constants" => "manual/constants.md",
         ],
         "API Reference" => "api.md",

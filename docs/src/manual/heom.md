@@ -28,8 +28,8 @@ H = [0 100; 100 0] * icm2ifs
 c = [0.001]
 V = [1 0; 0 -1]
 
-bath = Bath(γ, c, V)
-noise = Noise(bath)
+bath = BathExp(γ, c, V)
+noise = NoiseExp(bath)
 
 # Build HEOM system with hierarchy depth 5
 system = HEOMSystem(H, noise, 5)

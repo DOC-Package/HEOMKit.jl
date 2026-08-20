@@ -37,8 +37,8 @@ c = [0.001 + 0.0001im] # Expansion coefficient
 V = [1.0 0.0; 0.0 -1.0] # System-bath coupling
 
 # Create bath and noise
-bath = Bath(γ, c, V; add_conjugate=true)
-noise = Noise(bath)
+bath = BathExp(γ, c, V)
+noise = NoiseExp(bath)
 
 # Build HEOM system
 system = HEOMSystem(H, noise, 5)
@@ -55,6 +55,7 @@ Pages = [
     "manual/bath.md",
     "manual/heom.md",
     "manual/evolution.md",
+    "manual/performance.md",
     "manual/constants.md",
 ]
 Depth = 2

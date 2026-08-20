@@ -1,0 +1,4 @@
+# method terms_total expanded_heom_terms nado rho11_final rho22_final
+SIBCC	14	28	4495	0.4306673849678519	0.5693326150321446
+direct_ESPRIT	16	32	6545	0.4301915390792072	0.5698084609207918
+# maximum_population_difference 0.014671052310536559

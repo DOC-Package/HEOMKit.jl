@@ -31,13 +31,13 @@ using Test
         expon = ComplexF64[γ * icm2ifs]  # [1/fs]
         coeff = ComplexF64[λ * γ / (kB * T) * icm2ifs^2]  # 高温極限の近似
         
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         println("\nNoise parameters:")
         println("  nterms = $(noise.nterms)")
-        println("  expon = $(noise.expon)")
-        println("  coeff = $(noise.coeff)")
+        println("  γ = $(noise.γ)")
+        println("  c1 + c2 = $(noise.c1 .+ noise.c2)")
         
         # 単位変換されたハミルトニアン [1/fs]
         H_fs = H * icm2ifs
@@ -111,7 +111,7 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         system = HEOMSystem(H, noise, 2; hierarchy=:depth)
@@ -139,7 +139,7 @@ using Test
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         system = HEOMSystem(H, noise, 2; hierarchy=:depth)
@@ -223,9 +223,9 @@ using Test
             println("    ...")
         end
         
-        # 熱浴の構築（複素共役ペアは既にESPRITの結果に含まれているはず）
+        # 熱浴の構築（不足する複素共役モードは NoiseExp 側で補完される）
         V = ComplexF64[1 0; 0 -1]  # σz
-        bath = BathExp(gamk, ck, V; add_conjugate=false)
+        bath = BathExp(gamk, ck, V)
         noise = NoiseExp(bath)
         
         println("\nNoise structure:")
@@ -287,7 +287,7 @@ end
         # ノイズパラメータ
         expon = ComplexF64[0.01 + 0.001im]  # [1/fs]
         coeff = ComplexF64[0.001 + 0.0001im]  # 係数
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         println("Noise parameters:")
@@ -360,7 +360,7 @@ end
         
         expon = ComplexF64[0.01]
         coeff = ComplexF64[0.001]
-        bath = BathExp(expon, coeff, V; add_conjugate=true)
+        bath = BathExp(expon, coeff, V)
         noise = NoiseExp(bath)
         
         D = build_tridiagonal_D(noise.nterms, 0.05)

@@ -1,0 +1,2 @@
+# coeff (real)    coeff (imag)    expon (real)    expon (imag)
+1.813768618923e-04  -1.906123866104e-05  8.825364855572e-03  1.106412904325e-05

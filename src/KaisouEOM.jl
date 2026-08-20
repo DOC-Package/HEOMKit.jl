@@ -7,6 +7,7 @@ using SparseArrays
 export kB, hbar_SI, c_light
 export icm2ifs, ifs2icm
 export thermal_energy, inverse_temperature
+export blas_config, blas_num_threads, set_blas_threads!
 
 # noise.jl: Bath and Noise structures
 export BathExp, NoiseExp, BathGeneral, NoiseGeneral
@@ -47,6 +48,7 @@ export initial_ado
 
 # Include files
 include("const.jl")
+include("blas.jl")
 include("noise.jl")
 include("hierarchy.jl")
 include("matrix.jl")
