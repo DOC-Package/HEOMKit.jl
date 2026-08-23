@@ -1,14 +1,14 @@
-using KaisouEOM
+using HEOMKit
 using Documenter
 
-DocMeta.setdocmeta!(KaisouEOM, :DocTestSetup, :(using KaisouEOM); recursive=true)
+DocMeta.setdocmeta!(HEOMKit, :DocTestSetup, :(using HEOMKit); recursive=true)
 
 makedocs(;
-    modules=[KaisouEOM],
+    modules=[HEOMKit],
     authors="Hideaki Takahashi",
-    sitename="KaisouEOM.jl",
+    sitename="HEOMKit.jl",
     format=Documenter.HTML(;
-        canonical="https://htkhsh.github.io/KaisouEOM.jl",
+        canonical="https://htkhsh.github.io/HEOMKit.jl",
         edit_link="main",
         assets=String[],
     ),
@@ -26,6 +26,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/htkhsh/KaisouEOM.jl",
+    repo="github.com/htkhsh/HEOMKit.jl",
     devbranch="main",
 )

@@ -6,7 +6,7 @@ Compare dynamics with different hierarchy construction methods:
 Tests both HEOM and HSEOM dynamics.
 =#
 
-using KaisouEOM
+using HEOMKit
 using LinearAlgebra
 using Printf
 

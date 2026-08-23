@@ -2,8 +2,8 @@
 Analyze which ADW components grow large during HSEOM evolution
 """
 
-using KaisouEOM
-using KaisouEOM: icm2ifs, liouville_ket!, liouville_bra!, lsrk4!
+using HEOMKit
+using HEOMKit: icm2ifs, liouville_ket!, liouville_bra!, lsrk4!
 using LinearAlgebra
 
 println("Loading packages...")

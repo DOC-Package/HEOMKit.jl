@@ -1,5 +1,5 @@
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using QFiND
 using ExpFit
 using LinearAlgebra

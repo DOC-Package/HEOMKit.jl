@@ -5,7 +5,7 @@ This minimal example tests SIBCC for a two-level system coupled through
 system-weighted SIBCC reduction against a direct ESPRIT fit using identical
 HEOM settings.
 
-Run from the KaisouEOM repository root:
+Run from the HEOMKit repository root:
 
 ```sh
 julia --project=. examples/ohmic-sibcc/heom.jl

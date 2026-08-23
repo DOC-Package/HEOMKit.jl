@@ -14,8 +14,8 @@ For HSEOM, the BCF is expanded as:
 where φₖ(t) = Jₖ(Ω*t) * exp(-i*ω̄*t) (Bessel-Chebyshev basis).
 """
 
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using QFiND
 using LinearAlgebra
 using CairoMakie

@@ -1,6 +1,6 @@
 # HSEOM tests
-using KaisouEOM
-using KaisouEOM: icm2ifs, build_tridiagonal_D
+using HEOMKit
+using HEOMKit: icm2ifs, build_tridiagonal_D
 using LinearAlgebra
 using Test
 

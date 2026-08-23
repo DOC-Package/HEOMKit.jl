@@ -32,8 +32,8 @@ matr
 ## Internal Functions
 
 ```@docs
-KaisouEOM.kron_id_left
-KaisouEOM.kron_id_right
+HEOMKit.kron_id_left
+HEOMKit.kron_id_right
 ```
 
 ## Time Evolution

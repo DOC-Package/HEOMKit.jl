@@ -9,8 +9,8 @@ This compares:
 Using the same physical parameters as the semicircle example.
 =#
 
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using QFiND
 using ProlateSpheroidalWaveFunctions
 using LinearAlgebra

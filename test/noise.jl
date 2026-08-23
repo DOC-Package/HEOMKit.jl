@@ -1,4 +1,4 @@
-using KaisouEOM
+using HEOMKit
 using Test
 
 @testset "noise.jl" begin

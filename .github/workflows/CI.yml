@@ -66,6 +66,6 @@ jobs:
         shell: julia --project=docs --color=yes {0}
         run: |
           using Documenter: DocMeta, doctest
-          using KaisouEOM
-          DocMeta.setdocmeta!(KaisouEOM, :DocTestSetup, :(using KaisouEOM); recursive=true)
-          doctest(KaisouEOM)
+          using HEOMKit
+          DocMeta.setdocmeta!(HEOMKit, :DocTestSetup, :(using HEOMKit); recursive=true)
+          doctest(HEOMKit)

@@ -8,8 +8,8 @@ Test using a manually defined Bessel sum BCF:
 This validates HSEOM implementation by comparing with HEOM.
 """
 
-using KaisouEOM
-using KaisouEOM: icm2ifs
+using HEOMKit
+using HEOMKit: icm2ifs
 using SpecialFunctions: besselj
 using ExpFit
 using LinearAlgebra

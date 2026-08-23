@@ -10,7 +10,7 @@
 
 ## Unit Conversion
 
-KaisouEOM uses **inverse centimeters (cm⁻¹)** for energy and **femtoseconds (fs)** for time.
+HEOMKit uses **inverse centimeters (cm⁻¹)** for energy and **femtoseconds (fs)** for time.
 
 ### Conversion Factors
 

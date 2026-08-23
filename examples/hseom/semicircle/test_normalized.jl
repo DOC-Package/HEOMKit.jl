@@ -9,8 +9,8 @@ This script compares:
 All methods should give the same physical populations.
 """
 
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using QFiND
 using ProlateSpheroidalWaveFunctions
 using ExpFit

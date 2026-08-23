@@ -14,8 +14,8 @@ For HSEOM, the BCF is expanded as:
 where φₖ(t) are PSWF basis functions with bandwidth-limited property.
 """
 
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using QFiND
 using ProlateSpheroidalWaveFunctions
 using LinearAlgebra

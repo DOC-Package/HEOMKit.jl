@@ -8,7 +8,7 @@ BCF is also fitted directly by ESPRIT and propagated with identical HEOM
 settings. The output includes BCF-error, hierarchy-size, and population
 comparisons between the two methods.
 
-Run from the KaisouEOM repository root:
+Run from the HEOMKit repository root:
 
 ```sh
 julia --project=. examples/fmo2-sibcc/heom.jl

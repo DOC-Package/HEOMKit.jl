@@ -6,7 +6,7 @@ Compare hierarchy construction methods:
 Both HEOM and HSEOM cases are tested.
 =#
 
-using KaisouEOM
+using HEOMKit
 using LinearAlgebra
 using Printf
 

@@ -1,4 +1,4 @@
-module KaisouEOM
+module HEOMKit
 
 using LinearAlgebra
 using SparseArrays

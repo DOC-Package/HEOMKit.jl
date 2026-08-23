@@ -1,10 +1,10 @@
 ```@meta
-CurrentModule = KaisouEOM
+CurrentModule = HEOMKit
 ```
 
-# KaisouEOM.jl
+# HEOMKit.jl
 
-KaisouEOM.jl is a Julia package for Hierarchical Equations of Motion (HEOM) calculations in open quantum systems.
+HEOMKit.jl is a Julia package for Hierarchical Equations of Motion (HEOM) calculations in open quantum systems.
 
 ## Features
 
@@ -18,13 +18,13 @@ KaisouEOM.jl is a Julia package for Hierarchical Equations of Motion (HEOM) calc
 
 ```julia
 using Pkg
-Pkg.add(url="https://github.com/htkhsh/KaisouEOM.jl")
+Pkg.add(url="https://github.com/htkhsh/HEOMKit.jl")
 ```
 
 ## Quick Start
 
 ```julia
-using KaisouEOM
+using HEOMKit
 
 # Define system Hamiltonian (2-level system)
 ε = 0.0      # Energy gap [cm⁻¹]

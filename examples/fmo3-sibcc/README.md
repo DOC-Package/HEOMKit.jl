@@ -12,7 +12,7 @@ and couples an independent AR + 62-mode FMO bath to each localized site. It
 compares site-resolved SIBCC reductions with a direct ESPRIT fit and supports
 an independent ESPRIT candidate-generation time grid.
 
-Run from the KaisouEOM repository root:
+Run from the HEOMKit repository root:
 
 ```sh
 julia --project=. examples/fmo3-sibcc/heom.jl

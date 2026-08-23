@@ -8,8 +8,8 @@ Fortran setpara から推定されるパラメータ:
 - ck = 展開係数
 """
 
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB
+using HEOMKit
+using HEOMKit: icm2ifs, kB
 using LinearAlgebra
 
 println("=" ^ 60)

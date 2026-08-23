@@ -1,7 +1,7 @@
-using KaisouEOM
+using HEOMKit
 using Test
 
-@testset "KaisouEOM.jl" begin
+@testset "HEOMKit.jl" begin
     include("blas.jl")
     include("noise.jl")
     include("hierarchy.jl")

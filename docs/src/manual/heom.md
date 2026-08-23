@@ -18,7 +18,7 @@ where:
 ## Building a HEOM System
 
 ```julia
-using KaisouEOM
+using HEOMKit
 
 # System Hamiltonian
 H = [0 100; 100 0] * icm2ifs

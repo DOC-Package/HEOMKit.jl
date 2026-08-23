@@ -1,5 +1,5 @@
-using KaisouEOM
-using KaisouEOM: icm2ifs, kB, build_tridiagonal_D  # 定数をインポート
+using HEOMKit
+using HEOMKit: icm2ifs, kB, build_tridiagonal_D  # 定数をインポート
 using QFiND
 using ExpFit
 using LinearAlgebra
@@ -207,9 +207,9 @@ using Test
         println("  Relative fitting error: $fit_error")
         @test fit_error < 1e-4
         
-        # ExpFitの結果をKaisouEOMの熱浴パラメータに変換
+        # ExpFitの結果をHEOMKitの熱浴パラメータに変換
         # ExpFitの指数: f(t) = Σ cₖ exp(-aₖ t)
-        # KaisouEOMの熱浴: C(t) = Σ cₖ exp(-γₖ t)
+        # HEOMKitの熱浴: C(t) = Σ cₖ exp(-γₖ t)
         # → gamk = expon, ck = coeff
         gamk = ef.expon
         ck = ef.coeff
